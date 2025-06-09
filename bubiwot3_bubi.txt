@@ -1,0 +1,582 @@
+// BUBIWOT v3 Protocol Smart Contract Pseudocode
+// Deployed on: The BUBIWOT Appchain (Cosmos-SDK)
+// This contract outlines the "on-chain constitution" for a sovereign digital commons.
+
+// =================================================================
+// Contract State
+// =================================================================
+
+STATE.config: {
+  // ... other config from v1 ...
+  proposal_bond_amount: Uint, // BUBI required to create a governance proposal
+  proposal_voting_period_blocks: Uint,
+  auction_period_blocks: Uint, // How often auctions can be started
+  ubi_claim_period_blocks: Uint, // The cooldown period for UBI claims
+  ubi_claim_cap_per_period: Uint, // Max total UBI that can be claimed in a period
+}
+
+// -- Core State --
+STATE.accounts: Map<PublicKey, Account>
+STATE.pending_guardian_replacements: Map<PublicKey, Map<PublicKey, GuardianReplacementRequest>>
+STATE.pending_bubi_unstakes: Map<PublicKey, UnstakeRequest>
+STATE.accumulated_bubi_for_auction: Uint // Fees collected for the next auction
+STATE.last_auction_start_block: Uint
+
+// -- Governance State --
+STATE.proposals: Map<ProposalId, Proposal>
+STATE.code_reviews: Map<ProposalId, List<CodeReview>> // Staked reviews for code proposals
+STATE.registered_watchtowers: Map<PublicKey, Watchtower> // Staked entities that can report validators
+
+// -- Infrastructure State --
+STATE.registry: Map<String, RegistryRecord> // On-chain DNS for client/RPC resolution
+
+// -- Developer Economy State --
+STATE.bounties: Map<BountyId, Bounty>
+
+// -- Treasury Auction State --
+STATE.auctions: Map<AuctionId, TreasuryAuction>
+STATE.bids: Map<AuctionId, List<Bid>>
+
+
+// -- Data Structures --
+
+AccountPolicy: {
+  // Defines rules for who can perform actions on this account, like becoming a guardian.
+  // This structure can be extended to support complex, composable rules for both
+  // attestation and recovery (e.g. requiring attestations from multiple user-defined groups).
+  min_attestor_reputation: Uint,
+  min_attestor_stake: Uint,
+  attestor_must_be_human: Bool,
+}
+
+Account: {
+  owner_pubkey: PublicKey,
+  guardians: Set<PublicKey>,
+  recovery_threshold: Uint,
+  staked_btc_info: BtcStakeInfo,
+  bubi_balance: Uint,
+  bubi_staked: Uint,
+  reputation_score: Uint,
+  developer_reputation_score: Uint, // For code contributions
+  is_human_verified: Bool,
+  humanity_proof_nullifier_set: Set<Bytes>, // Prevents replay of attestor credentials
+  public_recovery_data: Option<Bytes>,
+  last_claim_block: Uint, // For UBI
+  last_btc_reward_claim_block: Uint, // For BTC fee share
+  policy: AccountPolicy,
+  guardian_pubkey_for_others: Option<PublicKey>,
+  btc_payout_address: Option<String>,
+}
+
+Proposal: {
+  id: ProposalId,
+  proposer: PublicKey,
+  title: String,
+  description_hash: Bytes, // Hash of off-chain description
+  merkle_root_of_voters: Bytes, // Snapshot of eligible voters
+  vote_counts: { yes: Uint, no: Uint, abstain: Uint },
+  used_nullifiers: Set<Bytes>,
+  end_block: Uint,
+  proposal_bond: Uint,
+  status: Enum("PENDING_VOTE", "PASSED", "REJECTED", "EXECUTED"),
+  payload: ProposalPayload,
+}
+
+ProposalPayload: Enum {
+  UpdateCodeCommit({ repo: String, commit_hash: String }),
+  UpdateRegistryRecord({ name: String, targets: List<String> }),
+  CreateBounty({ title: String, description_hash: Bytes, amount: Uint, currency: String, bounty_id: BountyId }),
+  SpendFromTreasury({ recipient: Address, amount: Uint, currency: String }), // To manage community funds
+  SlashValidator({ validator_address: Address, evidence_hash: Bytes, reporter_pubkey: PublicKey }), // Reporter can be a watchtower
+  ReportBug({ faulty_proposal_id: ProposalId, bug_description_hash: Bytes }), // For bug bounty payouts and slashing negligent reviewers
+  Text,
+}
+
+CodeReview: {
+  reviewer_pubkey: PublicKey,
+  review_stake: Uint,
+  approved: Bool,
+  comment_hash: Option<Bytes>,
+}
+
+RegistryRecord: {
+  owner_contract: Address, // e.g., The address of the Governance Module
+  targets: List<String>, // e.g., ["ipfs://...", "arweave://..."]
+}
+
+Bounty: {
+  id: BountyId,
+  creator: PublicKey,
+  amount: Uint,
+  currency: String,
+  status: Enum("OPEN", "FULFILLED"),
+  fulfilling_proposal_id: Option<ProposalId>,
+  fulfiller: Option<PublicKey>,
+}
+
+Watchtower: {
+  pubkey: PublicKey,
+  stake_amount: Uint,
+  registration_block: Uint,
+}
+
+TreasuryAuction: {
+  id: AuctionId,
+  bubi_amount: Uint,
+  end_block: Uint,
+  status: Enum("OPEN", "SETTLED"),
+  // Settlement info
+  clearing_price_btc_per_bubi: Option<Decimal>,
+  total_btc_proceeds: Option<Uint>,
+}
+
+Bid: {
+  bidder_pubkey: PublicKey,
+  // Bidders specify the max price they are willing to pay and the total BTC they are bidding.
+  // This allows the contract to calculate how much BUBI they get at the clearing price.
+  max_price_btc_per_bubi: Decimal,
+  total_btc_to_spend: Uint,
+  btc_lock_tx_proof: Bytes, // Proof their BTC is locked in the TSS escrow
+}
+
+
+// =================================================================
+// Core Account & Economy Functions (MVP)
+// (Largely similar to previous versions: register_account, set_recovery_info, attest_for_account, report_sybil, stake_bubi, claim_ubi, etc.)
+// =================================================================
+
+// The `attest_for_account` function is removed in favor of a private, ZK-based flow.
+
+// Allows a user to become verified by providing a ZK-proof that they have
+// received attestations from peers who satisfy the user's on-chain policy.
+FUNCTION claim_humanity_with_proof(zk_proof: Bytes):
+  // Pre-conditions
+  user_pubkey = sender
+  user_account = STATE.accounts.get(user_pubkey)
+  ASSERT user_account is not None, "Account not found"
+  ASSERT user_account.is_human_verified == False, "User is already verified"
+
+  // The ZK-SNARK verifier checks the proof.
+  // The proof's public inputs would include a hash of the user's policy and a set of nullifiers
+  // for the attestors' credentials, proving they haven't been used for this purpose before.
+  public_inputs = ZkSnarkVerifier.get_public_inputs(zk_proof)
+  policy_hash = hash(user_account.policy)
+  ASSERT public_inputs.policy_hash == policy_hash, "Proof does not match account policy"
+  
+  // The verifier contract internally checks the proof against a state root of all accounts
+  // to confirm that the hidden attestors meet the policy requirements (stake, reputation, etc).
+  ASSERT ZkSnarkVerifier.verify(zk_proof, get_current_state_root()) is True
+
+  // Prevent replay attacks by ensuring attestor credentials can only be used once per user claim.
+  for nullifier in public_inputs.attestor_nullifiers:
+    ASSERT nullifier is not in user_account.humanity_proof_nullifier_set
+    user_account.humanity_proof_nullifier_set.add(nullifier)
+
+  // Grant verified status
+  user_account.is_human_verified = True
+  
+  STATE.accounts.set(user_pubkey, user_account)
+  EMIT Event("HumanityVerified", { owner: user_pubkey })
+
+
+FUNCTION update_guardian_key(new_guardian_pubkey: PublicKey):
+  // Allows a user to rotate the dedicated key they use to act as a guardian for others.
+  // This action is authorized by their primary account key (sender).
+  // Pre-conditions
+  user_pubkey = sender
+  user_account = STATE.accounts.get(user_pubkey)
+  ASSERT user_account is not None, "Account not found"
+
+  // Update the guardian key
+  user_account.guardian_pubkey_for_others = Some(new_guardian_pubkey)
+
+  STATE.accounts.set(user_pubkey, user_account)
+  EMIT Event("GuardianKeyUpdated", { owner: user_pubkey, new_key: new_guardian_pubkey })
+
+
+FUNCTION register_account(owner_pubkey, btc_payout_address: Option<String>, btc_staking_tx_proof):
+  // ... (Same as before, but initializes new fields) ...
+  new_account = Account {
+    // ...
+    developer_reputation_score: 0,
+    // ...
+  }
+  STATE.accounts.set(owner_pubkey, new_account)
+  EMIT Event("AccountRegistered", { owner: owner_pubkey })
+
+
+FUNCTION register_watchtower(stake_amount: Uint):
+  // Allows any account to stake BUBI and become a watchtower, eligible for rewards from slashing.
+  // Pre-conditions
+  watchtower_pubkey = sender
+  watchtower_account = STATE.accounts.get(watchtower_pubkey)
+  ASSERT watchtower_account is not None, "Account not found"
+  ASSERT watchtower_account.bubi_balance >= stake_amount, "Insufficient stake"
+  ASSERT STATE.registered_watchtowers.get(watchtower_pubkey) is None, "Already registered"
+
+  // Lock stake from account balance
+  watchtower_account.bubi_balance -= stake_amount
+
+  // Create watchtower record
+  watchtower = Watchtower {
+    pubkey: watchtower_pubkey,
+    stake_amount: stake_amount,
+    registration_block: current_block,
+  }
+
+  STATE.registered_watchtowers.set(watchtower_pubkey, watchtower)
+  STATE.accounts.set(watchtower_pubkey, watchtower_account)
+  EMIT Event("WatchtowerRegistered", { pubkey: watchtower_pubkey, stake: stake_amount })
+
+
+// =================================================================
+// Governance Functions (MVP)
+// =================================================================
+
+// Called by a user to create a new governance proposal. Requires a bond.
+FUNCTION create_proposal(title: String, description_hash: Bytes, payload: ProposalPayload):
+  // Pre-conditions
+  proposer_pubkey = sender
+  proposer_account = STATE.accounts.get(proposer_pubkey)
+  ASSERT proposer_account.bubi_balance >= STATE.config.proposal_bond_amount, "Insufficient bond"
+
+  // Take the bond
+  proposer_account.bubi_balance -= STATE.config.proposal_bond_amount
+
+  // Create the proposal
+  proposal_id = generate_new_proposal_id()
+  proposal = Proposal {
+    id: proposal_id,
+    proposer: proposer_pubkey,
+    title: title,
+    description_hash: description_hash,
+    merkle_root_of_voters: generate_merkle_root_of_verified_humans(), // On-the-fly snapshot
+    vote_counts: { yes: 0, no: 0, abstain: 0 },
+    used_nullifiers: Set(),
+    end_block: current_block + STATE.config.proposal_voting_period_blocks,
+    proposal_bond: STATE.config.proposal_bond_amount,
+    status: "PENDING_VOTE",
+    payload: payload,
+  }
+
+  // If payload is CreateBounty, create the bounty object and lock funds
+  if payload is CreateBounty:
+    bounty_details = payload.details
+    ASSERT proposer_account.bubi_balance >= bounty_details.amount // Check funds for bounty itself
+    proposer_account.bubi_balance -= bounty_details.amount
+    bounty = Bounty {
+      id: bounty_details.bounty_id,
+      creator: proposer_pubkey,
+      amount: bounty_details.amount,
+      currency: bounty_details.currency,
+      status: "OPEN",
+    }
+    STATE.bounties.set(bounty_details.bounty_id, bounty)
+
+  STATE.proposals.set(proposal_id, proposal)
+  STATE.accounts.set(proposer_pubkey, proposer_account)
+  EMIT Event("ProposalCreated", { id: proposal_id, proposer: proposer_pubkey })
+
+
+// A user casts a private vote using a ZK-proof.
+FUNCTION cast_private_vote(proposal_id, zk_proof: Bytes):
+  // Pre-conditions
+  proposal = STATE.proposals.get(proposal_id)
+  ASSERT proposal is not None and proposal.status == "PENDING_VOTE"
+  ASSERT current_block < proposal.end_block
+
+  // ZK-SNARK Verifier checks the proof. The proof's public inputs contain the nullifier and the vote option.
+  public_inputs = ZkSnarkVerifier.get_public_inputs(zk_proof)
+  nullifier = public_inputs.nullifier
+  vote_option = public_inputs.vote_option
+
+  // Verify the proof against the voter set merkle root stored in the proposal
+  ASSERT ZkSnarkVerifier.verify(zk_proof, proposal.merkle_root_of_voters) is True
+  
+  // Prevent double-voting
+  ASSERT nullifier is not in proposal.used_nullifiers
+  proposal.used_nullifiers.add(nullifier)
+  
+  // Tally the vote
+  proposal.vote_counts[vote_option] += 1
+  
+  STATE.proposals.set(proposal_id, proposal)
+  EMIT Event("PrivateVoteCast", { proposal_id: proposal_id })
+
+
+// After voting period ends, anyone can trigger proposal finalization.
+FUNCTION finalize_proposal(proposal_id):
+  proposal = STATE.proposals.get(proposal_id)
+  ASSERT proposal is not None and proposal.status == "PENDING_VOTE"
+  ASSERT current_block >= proposal.end_block
+
+  // Determine winner
+  if proposal.vote_counts.yes > proposal.vote_counts.no:
+    proposal.status = "PASSED"
+    // Return bond to proposer
+    proposer_account = STATE.accounts.get(proposal.proposer)
+    proposer_account.bubi_balance += proposal.proposal_bond
+    STATE.accounts.set(proposal.proposer, proposer_account)
+  else:
+    proposal.status = "REJECTED"
+    // Bond is returned even on rejection, unless explicitly slashed for malice via another proposal.
+    proposer_account = STATE.accounts.get(proposal.proposer)
+    proposer_account.bubi_balance += proposal.proposal_bond
+    STATE.accounts.set(proposal.proposer, proposer_account)
+  
+  STATE.proposals.set(proposal_id, proposal)
+  EMIT Event("ProposalFinalized", { id: proposal_id, status: proposal.status })
+
+
+// After a proposal has passed, it can be executed.
+FUNCTION execute_proposal(proposal_id):
+  proposal = STATE.proposals.get(proposal_id)
+  ASSERT proposal is not None and proposal.status == "PASSED"
+
+  // Execute based on payload
+  payload = proposal.payload
+  if payload is UpdateRegistryRecord:
+    // This is the only way to update the on-chain registry
+    _update_registry_record(payload.name, payload.targets)
+  if payload is UpdateCodeCommit:
+    // The execution is an on-chain event signaling the new canonical commit.
+    // Validator services act on this event.
+    EMIT Event("CanonicalCodeUpdated", { repo: payload.repo, commit_hash: payload.commit_hash })
+    // Award reputation to the proposer
+    proposer_account = STATE.accounts.get(proposal.proposer)
+    proposer_account.developer_reputation_score += 10
+    STATE.accounts.set(proposal.proposer, proposer_account)
+  if payload is SpendFromTreasury:
+      // In a real implementation, this would likely have a time-lock.
+      // For now, it directly triggers a transfer from a protocol-owned treasury account.
+      _transfer_from_treasury(payload.recipient, payload.amount, payload.currency)
+  if payload is SlashValidator:
+    // This is a governance-enforced action to penalize a validator for misbehavior
+    // (e.g., censorship proven by watchtowers). The actual slashing logic
+    // would be handled by the underlying staking module of the Cosmos SDK.
+    // A portion of the slashed funds should be rewarded to the reporter.
+    ASSERT STATE.registered_watchtowers.get(payload.reporter_pubkey) is not None, "Reporter is not a registered watchtower"
+    EMIT Event("ValidatorSlashProposed", {
+      validator: payload.validator_address,
+      evidence: payload.evidence_hash,
+      reporter: payload.reporter_pubkey
+    })
+  if payload is ReportBug:
+    // Execute bug bounty logic
+    _process_bug_report(payload.faulty_proposal_id, proposal.proposer)
+
+  proposal.status = "EXECUTED"
+  STATE.proposals.set(proposal_id, proposal)
+
+
+// =================================================================
+// Developer Economy Functions (MVP)
+// =================================================================
+
+// A user stakes BUBI to review a pending code proposal.
+FUNCTION review_code_proposal(proposal_id, stake_amount: Uint, approved: Bool, comment_hash: Option<Bytes>):
+  // Pre-conditions
+  reviewer_pubkey = sender
+  reviewer_account = STATE.accounts.get(reviewer_pubkey)
+  proposal = STATE.proposals.get(proposal_id)
+  ASSERT proposal.payload is UpdateCodeCommit
+  ASSERT reviewer_account.bubi_balance >= stake_amount
+
+  // Lock stake
+  reviewer_account.bubi_balance -= stake_amount
+
+  // Create and store review
+  review = CodeReview {
+    reviewer_pubkey: reviewer_pubkey,
+    review_stake: stake_amount,
+    approved: approved,
+    comment_hash: comment_hash,
+  }
+  reviews = STATE.code_reviews.get(proposal_id) or []
+  reviews.append(review)
+  STATE.code_reviews.set(proposal_id, reviews)
+  STATE.accounts.set(reviewer_pubkey, reviewer_account)
+  EMIT Event("CodeReviewed", { proposal_id: proposal_id, reviewer: reviewer_pubkey, approved: approved })
+
+// (Note: Logic to pay out/slash review stakes would be in `finalize_proposal`)
+
+
+// =================================================================
+// On-Chain Infrastructure & Query Functions (MVP)
+// =================================================================
+
+// INTERNAL function to update the registry. Can only be called by this contract.
+FUNCTION _update_registry_record(name: String, targets: List<String>):
+  // In a real implementation, this would also check that the caller is the governance module itself.
+  record = STATE.registry.get(name)
+  // For MVP, assume record exists. In reality, would need creation/ownership logic.
+  record.targets = targets
+  STATE.registry.set(name, record)
+  EMIT Event("RegistryUpdated", { name: name, new_targets: targets })
+
+// PUBLIC query function for clients to resolve names.
+QUERY resolve_name(name: String):
+  record = STATE.registry.get(name)
+  RETURN record.targets
+
+QUERY get_proposal(proposal_id):
+  RETURN STATE.proposals.get(proposal_id)
+
+QUERY get_account(owner_pubkey):
+  RETURN STATE.accounts.get(owner_pubkey)
+
+// =================================================================
+// Developer Economy & Account Maintenance Functions (MVP)
+// =================================================================
+
+// Called by a user to confirm they have reviewed their guardian set, boosting their reputation.
+FUNCTION perform_guardian_review():
+  // Pre-conditions
+  user_pubkey = sender
+  user_account = STATE.accounts.get(user_pubkey)
+  ASSERT user_account is not None, "Account not found"
+
+  // This function would likely have a cooldown period to prevent spamming.
+  // For simplicity, we just increase the reputation score.
+  user_account.reputation_score += 1 // Small reward for good security hygiene
+  STATE.accounts.set(user_pubkey, user_account)
+  EMIT Event("GuardianSetReviewed", { owner: user_pubkey, new_reputation: user_account.reputation_score })
+
+// INTERNAL function to process a successful bug report proposal.
+FUNCTION _process_bug_report(faulty_proposal_id, bug_reporter_pubkey):
+  // Reward the bug reporter
+  reporter_account = STATE.accounts.get(bug_reporter_pubkey)
+  reporter_account.developer_reputation_score += 50 // Significant reward
+  // Potentially pay out a BUBI bounty as well
+  STATE.accounts.set(bug_reporter_pubkey, reporter_account)
+
+  // Find and penalize reviewers who approved the faulty proposal
+  reviews = STATE.code_reviews.get(faulty_proposal_id)
+  for review in reviews:
+    if review.approved:
+      // Slash the stake of the negligent reviewer
+      // The slashed funds could go to the bug reporter or the treasury
+      reviewer_account = STATE.accounts.get(review.reviewer_pubkey)
+      reviewer_account.developer_reputation_score -= 25 // Penalty
+      // The original `review_stake` is slashed (not returned)
+      STATE.accounts.set(review.reviewer_pubkey, reviewer_account)
+      EMIT Event("ReviewerSlashed", {
+        proposal_id: faulty_proposal_id,
+        reviewer: review.reviewer_pubkey,
+      })
+
+// =================================================================
+// Treasury Auction Functions
+// =================================================================
+
+// Anyone can kick off a new auction if the auction period has passed.
+FUNCTION start_auction():
+  // Pre-conditions
+  ASSERT current_block > STATE.last_auction_start_block + STATE.config.auction_period_blocks, "Auction period not over"
+  bubi_to_auction = STATE.accumulated_bubi_for_auction
+  ASSERT bubi_to_auction > 0, "No BUBI fees to auction"
+
+  // Reset accumulator and update timer
+  STATE.accumulated_bubi_for_auction = 0
+  STATE.last_auction_start_block = current_block
+
+  // Create and store the new auction
+  auction_id = generate_new_auction_id()
+  auction = TreasuryAuction {
+    id: auction_id,
+    bubi_amount: bubi_to_auction,
+    end_block: current_block + STATE.config.proposal_voting_period_blocks, // Re-use voting period for auction duration
+    status: "OPEN",
+  }
+  STATE.auctions.set(auction_id, auction)
+  EMIT Event("AuctionStarted", { id: auction_id, bubi_amount: bubi_to_auction })
+
+// A user places a bid on an open auction.
+FUNCTION place_bid(auction_id, max_price_btc_per_bubi: Decimal, total_btc_to_spend: Uint, btc_lock_tx_proof: Bytes):
+  // Pre-conditions
+  auction = STATE.auctions.get(auction_id)
+  ASSERT auction is not None and auction.status == "OPEN", "Auction not open"
+  ASSERT current_block < auction.end_block, "Auction has ended"
+
+  // TODO: Verify the btc_lock_tx_proof to ensure the BTC is actually held in escrow by the TSS vault.
+
+  // Store the bid
+  bid = Bid {
+    bidder_pubkey: sender,
+    max_price_btc_per_bubi: max_price_btc_per_bubi,
+    total_btc_to_spend: total_btc_to_spend,
+    btc_lock_tx_proof: btc_lock_tx_proof,
+  }
+  bids = STATE.bids.get(auction_id) or []
+  bids.append(bid)
+  STATE.bids.set(auction_id, bids)
+  EMIT Event("BidPlaced", { auction_id: auction_id, bidder: sender })
+
+// After an auction ends, anyone can trigger settlement.
+FUNCTION settle_auction(auction_id):
+  // Pre-conditions
+  auction = STATE.auctions.get(auction_id)
+  ASSERT auction is not None and auction.status == "OPEN", "Auction not open for settlement"
+  ASSERT current_block >= auction.end_block, "Auction has not ended yet"
+
+  // --- Batch Auction Settlement Logic (Uniform Price) ---
+  bids = STATE.bids.get(auction_id) or []
+  // Sort bids from highest price to lowest
+  sorted_bids = bids.sort(by="max_price_btc_per_bubi", order="desc")
+  
+  bubi_to_fill = auction.bubi_amount
+  clearing_price = 0
+  total_btc_proceeds = 0
+  
+  winning_bids = []
+
+  for bid in sorted_bids:
+    if bubi_to_fill == 0:
+      // All BUBI has been allocated, remaining are losing bids
+      EMIT Event("BidLost", { auction_id: auction_id, bidder: bid.bidder_pubkey }) // Signals TSS to refund BTC
+      continue
+
+    // This is the clearing price: the price of the last bid that gets filled (even partially)
+    clearing_price = bid.max_price_btc_per_bubi
+    
+    // How much BUBI can this bid buy at its max price?
+    bubi_can_buy = bid.total_btc_to_spend / bid.max_price_btc_per_bubi
+    
+    if bubi_can_buy <= bubi_to_fill:
+      // Full bid is accepted
+      winning_bids.append({bidder: bid.bidder_pubkey, bubi_bought: bubi_can_buy, btc_paid: bid.total_btc_to_spend})
+      bubi_to_fill -= bubi_can_buy
+    else:
+      // Partial bid is accepted, filling the rest of the auction
+      bubi_bought = bubi_to_fill
+      btc_paid = bubi_bought * clearing_price // Pay only for what was received at the clearing price
+      winning_bids.append({bidder: bid.bidder_pubkey, bubi_bought: bubi_bought, btc_paid: btc_paid})
+      bubi_to_fill = 0
+  
+  // Now, recalculate what everyone pays based on the single clearing price
+  for win in winning_bids:
+      actual_btc_to_pay = win.bubi_bought * clearing_price
+      total_btc_proceeds += actual_btc_to_pay
+      
+      // Send BUBI to the winner
+      winner_account = STATE.accounts.get(win.bidder)
+      winner_account.bubi_balance += win.bubi_bought
+      STATE.accounts.set(win.bidder, winner_account)
+      
+      // Emit event for the TSS service to handle BTC movement
+      EMIT Event("BidWon", {
+          auction_id: auction_id,
+          bidder: win.bidder,
+          btc_to_protocol: actual_btc_to_pay,
+          // If refund is needed (bidder paid less than their total locked BTC)
+          btc_to_refund: win.btc_paid - actual_btc_to_pay
+      })
+
+  // Update auction state
+  auction.status = "SETTLED"
+  auction.clearing_price_btc_per_bubi = Some(clearing_price)
+  auction.total_btc_proceeds = Some(total_btc_proceeds)
+  STATE.auctions.set(auction_id, auction)
+
+  // This signals the protocol that new BTC is available for distribution
+  EMIT Event("AuctionSettled", { id: auction_id, proceeds_btc: total_btc_proceeds })

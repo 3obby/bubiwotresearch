@@ -1,0 +1,1529 @@
+ANARKey: A New Approach to (Socially) Recover Keys
+Aniket Kate
+
+Pratyay Mukherjee
+
+Hamza Saleem
+
+Purdue University / Supra Research
+USA
+aniket@purdue.edu
+
+Supra Research, India
+pratyay85@gmail.com
+
+Supra Research, USA
+h.saleem@supraoracles.com
+
+Pratik Sarkar
+
+Bhaskar Roberts
+
+Supra Research, India
+iampratiksarkar@gmail.com
+
+University of California, Berkeley
+USA
+bhaskarr@berkeley.edu
+
+ABSTRACT
+In a social key recovery scheme, users back up their secret keys
+(typically using Shamir’s secret sharing) with their social connections, known as a set of guardians. This places a heavy burden
+on the guardians, as they must manage their shares both securely
+and reliably. Finding and managing such a set of guardians may
+not be easy, especially when the consequences of losing a key are
+significant.
+We take an alternative approach of social recovery within a community, where each member already holds a secret key (with possibly an associated public key) and uses other community members
+as their guardians forming a mutual dependency among themselves.
+Potentially, each member acts as a guardian for upto (𝑛 − 1) other
+community members. Therefore, in this setting, using standard
+Shamir’s sharing leads to a linear (𝑂 (𝑛)) blow-up in the internal
+secret storage of the guardian for each key recovery. Our solution
+avoids this linear blowup in internal secret storage by relying on a
+novel secret-sharing scheme, leveraging the fact that each member
+already manages a secret key. In fact, our scheme does not require
+guardians to store anything beyond their own secret keys.
+We propose the first formal definition of a social key recovery
+scheme for general access structures in the community setting. We
+prove that our scheme is secure against any malicious and adaptive
+adversary that may corrupt up to 𝑡 parties. As a main technical
+tool, we use a new notion of secret sharing, that enables (𝑡 + 1)
+out of 𝑛 sharing of a secret even when the shares are generated
+independently – we formalize this as bottom-up secret sharing
+(BUSS), which may be of independent interest.
+Finally, we provide an implementation benchmarking varying
+the number of guardians both in a regional, and geo-distributed
+setting. For instance, for 8 guardians, our backup protocol takes
+around 146-149 ms in a geo-distributed WAN setting, and 4.9-5.9
+ms in the LAN setting; for recovery protocol, the timings are approximately the same for the WAN setting (as network latency
+dominates), and 1.2-1.4 ms for the LAN setting.
+
+1
+
+INTRODUCTION
+
+Cryptography plays a crucial role in securing and authenticating
+data in the digital space by providing mathematically proven guarantees. However, virtually all such guarantees crucially rely on
+keeping the underlying secret key secure and available, both at the
+Bhaskar Roberts worked on this project primarily during a summer internship at Supra
+Research.
+
+same time. In the blockchain space, due to its fundamental reliance
+on cryptography, creating secure and reliable (that is available when
+needed) wallet services, for storing keys, has garnered substantial
+attention [10, 17] in the past few years.
+Storing secret keys in wallets securely and reliably turns out
+to be remarkably challenging. Among many a primary challenge
+is, unlike passwords, keys can not be reset easily. For example, if
+certain funds are “locked” with respect to a particular public-key,
+such that a transaction requires a signature using the corresponding secret-key, then those funds are lost forever if the secret key
+cannot be recovered. It is estimated that USD 140 billions worth of
+BTC is unrecoverable due to lost secret keys [26]! Therefore, many
+existing wallets support a backup option, either via mnemonic
+pass phrases [14], which one may write down in a secure place,
+or splitting the key [11, 19] using simple secret sharing (such as
+Shamir’s [23]) and storing the shares in different devices – each
+share must be secured with another authentication mechanism,
+such as passwords. But even for those solutions (also called cold [12]
+or hardware wallets [29]) incidental memory erasure or losing passwords (or a combination) 1 may happen realistically invoking a loss
+of funds. In fact, in scenarios involving permanent disappearance,
+such as the death or disability of the key-owner, a similar loss of
+funds can take place.
+Many of these issues are mitigated in social recovery solutions,
+which, as laid out by Buterin [8], carry substantial benefits in terms
+of usability and reliability without compromising security. In a
+social recovery scheme, a key-owner uses parties from her social
+circle, also known as guardians, to back up her secret key. A typical
+recovery access structure can be (𝑡 + 1)-out-of-𝑛 threshold, where 𝑛
+guardians are used for backup and any (𝑡 + 1) of them are required
+to recover the key. This setting will be secure as long as at most 𝑡
+of the shares are captured, by collusion or otherwise. Importantly,
+in the event of a permanent disappearance of the key-owner, e.g.
+demise, the legitimate nominee can coordinate with any (𝑡 + 1)
+guardians to recover the secret key and thus inherit any asset locked
+with the key.
+However, the security and reliability aspects of the social recovery approach crucially relies on the guardians. An ideal guardian
+should be technologically adept, trustworthy, and reliable. Finding
+
+1 In [8], a real-world example was given for a Bitcoin developer Stefan Thomas, who had
+
+three backups entities – an encrypted USB stick, a Dropbox account and a Virtualbox
+virtual machine. However, he accidentally erased two of them and forgot the password
+of the third, forever losing access to 7,000 BTC (worth $125, 000 at the time).
+
+Aniket Kate, Pratyay Mukherjee, Hamza Saleem, Pratik Sarkar, and Bhaskar Roberts
+
+a set of guardians all of whom posses these attributes to a reasonable degree may not be easy. Importantly, since the guardians do
+not have any stake (barring just helping the key owner) with the
+existing approaches, it may be too optimistic to assume that they
+would store the shares both securely and reliably.
+Motivated by this, we put forward a new community-based model
+for social recovery. Our model considers a community of secret-key
+holders (e.g., users of cryptocurrency), such that everyone can use
+(a subset of) the other community members as their guardians. In
+return, they are also expected to serve as guardians for other parties.
+This creates an ecosystem of mutual dependence, in that there is a
+clear motivation for each member to store the shares of other key
+owners securely and reliably, with the hope that the other members
+would also return the favor.
+Using a simple (𝑡 + 1)-out-𝑛 secret sharing in this model, however, incurs new issues, as we elaborate next: let sk𝑖 is party 𝑃𝑖 ’s
+secret key, which is a 256-bit string. A secret sharing of sk𝑖 would
+generate 𝑛 shares 𝜎𝑖,1, 𝜎𝑖,2, . . . 𝜎𝑖,𝑛 , where 𝜎𝑖,𝑗 belongs to guardian
+𝑃 𝑗 – each 𝜎𝑖,𝑗 is also a 256 bit string. Now, in the community setting,
+everyone would potentially use other members as guardians, and
+hence it is expected that party 𝑃 𝑗 may have to serve as a guardian
+for 𝑚 different key-owners. In that scenario, 𝑃 𝑗 has to manage 𝑚
+different shares securely and reliably. The requirement of securely
+and reliably many shares (scales with 𝑂 (𝑚)) becomes challenging
+for the members, and even worse, this may end up discouraging
+users from joining the community.
+To resolve this issue we propose a new solution, in that, parties
+do not need to store any additional data beyond their own secret
+key securely and reliably. Our main idea is to leverage the fact that
+each user already maintains a secret-key, and the shares would be
+derived from that without hurting security. In fact, our protocol is
+quite general and works beyond the community setting: as long as
+each guardian can manage a single secret key, there is no need to
+store any additional information, regardless of the number of key
+owner the guardian supports.
+
+1.1
+
+The scheme supports every party to back up their respective keys with (a subset of) everyone else, without needing
+to store anything apart from their own secret key – this
+establishes an ecosystem of mutual dependence without
+additional overhead. Our protocol is secure (with abort)
+against any malicious and adaptive corruption up to 𝑡 parties. We also emphasize that both our backup and recovery protocols require only a single round trip interaction
+in a star network, with the key-owner in the center, and
+guardians sending a single message, without requiring any
+synchronization among themselves – in fact, the guardians
+do not require to know each other.2
+• The main technical tool, we rely upon, is a new type of
+secret sharing scheme, which supports independent shares
+for a (𝑡 + 1)-out-of-𝑛 threshold access structure – given
+a secret, and (𝑛 − 1)-many independently chosen shares,
+one can produce a (set of) public values, such that during
+reconstruction, any (𝑡 + 1) of the shares and the public
+values can be combined to reconstruct the secret. This type
+of secret sharing has been used recently by Baird et al. [3]
+to design multiverse threshold signatures. In this paper we
+formalize this as bottom-up secret sharing (BUSS) with an
+adaptive simulation security definition – this may be of
+independent interest.
+• To demonstrate practicality we perform extensive benchmarking, varying the tools (such as the types of elliptic
+curves and hash functions) and the number of guardians
+both in a regional, and geo-distributed setting. For instance,
+with standard hash functions, for 8 guardians, our backup
+protocol takes around 146-149 ms in a geo-distributed WAN
+setting (with a network delay of 138 ms), and 4.9-5.9 ms
+in the intra-regional LAN setting; for recovery protocol,
+the timings are approximately the same for WAN setting
+(as communication latency dominates), and 1.2-1.4 ms for
+the LAN setting. We also provide more optimized numbers with multi-threading that enhances the performances
+significantly (see Section 7 for details).
+
+Our Contribution
+
+In short, our contributions are:
+• We introduce the concept of community-based social recovery. We formalize the correctness and security definitions of
+community-based social key recovery schemes in a standalone simulation-based framework [9, 16]. Intuitively, our
+definition ensures that no computationally bounded adversary, which corrupts parties (maliciously and adaptively)
+satisfying some access structure is able to distinguish between a real world where the actual protocol is run and
+an ideal world, where the honest party’s responses are
+computed without their secret inputs. To the best of our
+knowledge, this is the first formalization of any social key
+recovery scheme.
+• We design a simple protocol for community-based social
+key recovery. Each owner’s key can be backed up with a
+subset of the rest of the community members, denoted as
+guardians. The guardians do not have to store anything
+in addition to their own key. For recovery, any (𝑡 + 1)
+guardians must help correctly for a pre-defined threshold 𝑡.
+
+Additionally, we discuss a few extensions of our key recovery
+scheme to accommodate settings where a guardian may update
+their secret key, or maintain a separate “guardian-key” in addition
+to its signing key. We further demonstrate that our scheme can
+be made to work on top of most cold wallets, such as Ledger [15],
+Trezor [29], where the guardians store their secret keys in the cold
+wallet and use that only for producing deterministic signatures.
+
+1.2
+
+Technical Overview
+
+Let us first describe our community setting, in that there are 𝑁
+parties 𝑃1, . . . , 𝑃 𝑁 pairwise connected via secure and authenticated
+channels. Also we assume a reliable public storage, e.g. a bulletin
+board. We assume that each party 𝑃𝑖 holds a key sk𝑖 generated by
+executing a key-generation algorithm (sk𝑖 , pk𝑖 ) ← KeyGen(1𝜆 ),
+2 As elaborated by Buterin [8], guardians not knowing each other intuitively reduces
+
+the possibility of collusion. In our community setting consisting of 𝑁 members, a key
+owner can use any subset (say, of size 𝑛 ) of the members as her guardians. So there
+
+are 𝑁
+𝑛 many such possibilities, which means guessing the set of guardians has a low
+probability of success for adequately chosen 𝑛 , for instance, 𝑛 = 𝑁 /2
+
+ANARKey: A New Approach to (Socially) Recover Keys
+
+𝜑1
+
+3. 𝜑
+
+(pk1 , pk2 , pk3 , pk4 )
+
+(pk1 , pk2 , pk3 , pk4 )
+
+Bulletin Board
+
+Bulletin Board
+
+1
+
+3. 𝜑
+
+1. REQ
+
+1. REQ
+
+𝑃1 (sk1 )
+
+𝑃2 (sk2 )
+
+𝑃2 (sk2 )
+
+𝑃1
+
+2. 𝜎1,2
+
+2. 𝜎1,2
+
+1. R
+E
+
+2. 𝜎1,3
+
+1
+
+Q
+
+2. 𝜎1,3
+
+1. REQ
+
+1. REQ
+
+2. 𝜎
+
+4. Recon(pk1, 𝜑 1, 𝜎1,2, 𝜎1,3 ) → sk1 /⊥
+
+1,4
+
+𝑃3 (sk3 )
+
+𝑃4 (sk4 )
+
+(a) Party 𝑃 1 ’s key backup with 𝑃 2 , 𝑃 3 , and 𝑃 4
+
+𝑃3 (sk3 )
+(b) Party 𝑃 1 ’s key recovery with 𝑃 2 and 𝑃 3
+
+Figure 1: Workflow of our social key recovery scheme (𝑛 = 4, 𝑡 = 1) where 𝐵 = {2, 3, 4} and 𝑅 = {2, 3}. We denote the shares
+as {𝜎1,𝑗 } 𝑗 ∈ {2,3,4} and the public point as 𝜑 1 . Algorithm Recon reconstructs the secret sk1 using the public point 𝜑 1 and shares
+(𝜎1,2, 𝜎1,3 ) and matches it with pk1 .
+where 𝜆 is a security parameter.3 The public keys are published
+on the bulletin board in the beginning and serve as identities. For
+simplicity we use integers 𝑖 ∈ [𝑁 ] to represent party 𝑃𝑖 ’s identity.
+Also, fix a threshold 𝑡 (as a parameter) and assume that every party
+uses exactly 𝑛 − 1 > 𝑡 (𝑛 < 𝑁 ) other parties as guardians – our protocol also works if each key-owner chooses a different 𝑛 satisfying
+𝑛 − 1 > 𝑡.
+Now, when 𝑃𝑖 wishes to backup her secret key sk𝑖 (for which a
+public key pk𝑖 is publicly known), she selects a set 𝐵 ⊆ [𝑁 ] \ {𝑖}
+of 𝑛 − 1 guardians {𝑃 𝑗 } 𝑗 ∈𝐵 . As mentioned earlier, a simple (𝑡 + 1)out-of-𝑛 secret sharing using a 𝑡-degree polynomial would yield
+to a share 𝜎𝑖,𝑗 (for guardian 𝑃 𝑗 ), which is uncorrelated with 𝑃 𝑗 ’s
+own secret key sk 𝑗 . Our goal is to use sk 𝑗 to derive 𝜎𝑖,𝑗 for any
+𝑖 instead. At first glance, this looks hard, because deriving each
+𝜎𝑖,𝑗 from independently sampled sk 𝑗 ’s would lead to independent
+shares 𝜎𝑖,𝑗 ’s – in general this leads to a 𝑛-out-of-𝑛 (or additive)
+secret sharing. However, here we use a technique recently used
+by Baird et al. [3]. The idea is to first derive {𝜎𝑖,𝑗 } 𝑗 ∈ [𝑛−1] independently (deterministically using corresponding sk 𝑗 ), which together
+with the key-owner’s secret sk𝑖 defines an (𝑛 − 1)-degree polynomial. Nevertheless, making another (𝑛 − 𝑡 − 1) points on the
+polynomial public reduces the “effective threshold” of the system to
+(𝑡 + 1). These additional points would be derived via interpolation
+by the key-owner 𝑃𝑖 herself, once she gets back all {𝜎𝑖,𝑗 } 𝑗 ∈𝐵 , and
+then those points will be made public. 4 A couple of issues still
+3 For example, this can be a key generation algorithm of BLS signature, where pk = 𝑔sk
+
+for a group generator 𝑔. Also we note that, our scheme works even if parties use
+different KeyGen, as long as the key pair satisfies certain basic conditions, as described
+in Section 6. For simplicity, in this paper, we consider that every party executes the
+same KeyGen.
+4We observe that for each backup session a fresh set of (𝑛 − 𝑡 − 1) public points are
+generated. Storing all of these on the blockchain would require spending substantial
+
+remain: (i) a guardian 𝑃 𝑗 must ensure that 𝜎𝑖,𝑗 does not leak any
+information about sk 𝑗 ; (ii) the (𝑛 − 𝑡 − 1) public points must be
+computed on inputs that are different from any input corresponding
+to 𝜎𝑖,𝑗 . The first issue is fixed by using the following derivation
+𝜎𝑖,𝑗 := H(𝑖, sk 𝑗 ) (alternatively 𝜎𝑖,𝑗 := H(pk𝑖 , sk 𝑗 )) – assuming H is
+a random oracle this gives no information about sk 𝑗 , as long as sk 𝑗
+is hard to compute given pk𝑖 (for example, the public key in BLS
+signature [7] and ECDSA signature this is true due to the hardness
+of computing discrete log). The second issue is resolved by using
+negative evaluation points −1, −2, . . . , −(𝑛 − 𝑡 − 1), akin to Baird et
+al. [3]. The overall backup protocol can be summarized as follows:
+• The key-owner 𝑃𝑖 chooses a set 𝐵 ⊆ [𝑁 ] \ {𝑖} and reaches
+out to the guardians 𝑃 𝑗 for all 𝑗 ∈ 𝐵.
+• Each guardian 𝑃 𝑗 , on receiving the request, computes 𝜎𝑖,𝑗 :=
+H(𝑖, sk 𝑗 ) and sends that back to 𝑃𝑖 .
+• 𝑃𝑖 , on receiving {𝜎𝑖,𝑗 } 𝑗 ∈𝐵 , computes a (𝑛 − 1)-degree polynomial 𝑓𝑖 (over a field, where the secrets sk𝑖 lie) by setting:
+𝑓𝑖 (0) = sk𝑖 and for all 𝑗 ∈ 𝐵: 𝑓𝑖 ( 𝑗) = 𝜎𝑖,𝑗 . Then it evaluates
+𝑓𝑖 (−1), 𝑓𝑖 (−2), . . . , 𝑓𝑖 (−(𝑛 − 𝑡 − 1)) and publishes them.
+Given the above protocol, the recovery protocol works simply
+by requiring the key-owner 𝑃𝑖 to interact with (𝑡 + 1) guardians
+{𝑃 𝑗 } 𝑗 ∈𝑅 for 𝑅 ⊆ 𝐵 and |𝑅| = 𝑡 + 1 as follows:
+• 𝑃𝑖 reaches out to any (𝑡 + 1) guardians {𝑃 𝑗 } 𝑗 ∈𝑅 .
+• Each guardian recomputes 𝜎𝑖,𝑗 := H(𝑖, sk 𝑗 ) and sends back.
+• On receiving (𝑡 + 1) shares {𝜎𝑖,𝑗 } 𝑗 ∈𝑅 , 𝑃𝑖 interpolates sk𝑖 :=
+𝑓𝑖 (0) using 𝑛 distinct evaluation points combining these
+(𝑡 + 1) evaluation points 𝑓𝑖 ( 𝑗) := 𝜎𝑖,𝑗 and (𝑛 − 𝑡 − 1) public
+evaluation points 𝑓𝑖 (−1), 𝑓𝑖 (−2), . . . , 𝑓𝑖 (−(𝑛 − 𝑡 − 1)). In the
+gas cost, which scales linearly with the number of backups. Instead, one may just put
+a hash of the points, and store the point themselves off-chain.
+
+Aniket Kate, Pratyay Mukherjee, Hamza Saleem, Pratik Sarkar, and Bhaskar Roberts
+
+end it checks whether sk𝑖 is the correct key with respect to
+public pk𝑖 .
+Figure 1 provides a workflow of our scheme for the case where
+𝑛 = 4 and 𝑡 = 1. Party 𝑃 1 first creates a backup of key sk1 by
+interacting with parties 𝑃 2 , 𝑃3 , and 𝑃 4 , as illustrated in Figure 1a.
+The public evaluation shares 𝜑 1 are published on the bulletin board.
+In the event of key loss, party 𝑃1 can interact with 𝑡 + 1 parties i.e.
+𝑃2 and 𝑃3 in this example, and the public bulletin board to recover
+the key, as shown in Figure 1b.
+Let us remark a few important things about our protocols: first,
+note that as long as adversary corrupts at most 𝑡 parties then it gets
+𝑡 shares. Given (𝑛−𝑡 −1) public points, the adversary knows at most
+(𝑛 − 1) evaluation points, insufficient to recover any information
+about sk𝑖 . Second, if 𝑃 𝑗 works as a guardian for different key owners
+𝑖 1, . . . , 𝑖𝑚 , all shares 𝜎𝑖 1 ,𝑗 = H(𝑖 1, sk 𝑗 ), . . . , 𝜎𝑖𝑚 ,𝑗 = H(𝑖𝑚 , sk 𝑗 ) are
+uncorrelated and independent as long as sk 𝑗 is hidden, assuming H
+is a random oracle. Thirdly, 𝜎𝑖,𝑗 does not leak anything about sk 𝑗
+as long as sk 𝑗 is hard to predict given pk 𝑗 , due to random oracle
+properties of H as well. Furthermore, here the guardians do not
+need to know each other, as 𝐵 is never made public – as mentioned
+in [8], this reduces the chance of collusion, as first they need to
+figure out the set 𝐵. We note that, in our protocol, during recovery
+a key-owner must remember the backup set 𝐵, as she needs to
+reach out to a (𝑡 + 1) size subset of that set. This is relatively easy
+information to remember, as also pointed out in [8], and plausibly
+is necessary too.
+Malicious security comes virtually for free. This is because, a
+malicious key-owner can only hurt herself, and thus can not do
+worse than a semi-honest key-owner. A malicious guardian may
+send arbitrary computation at either the backup or recovery phase.
+But that would still leave enough entropy to the secret. An inconsistent behavior, such as sending different values at the time of
+backup and recovery would yield a faulty recovery of sk𝑖 . But since
+this is checked against the public key pk𝑖 at the very last step of
+the recovery protocol, the key-owner would be able to catch this
+behavior and abort. However, the key-owner would not be able to
+identify the cheater as our protocol does not support identifiable
+abort – we leave that as an interesting open question for the future.
+Our protocol can be proven secure against adaptive corruption,
+where the adversary may corrupt parties at any time during the
+execution. The main challenge to achieve this, with respect to a
+simulation-based definition, such as ours, is the following scenario:
+the simulator simulates an honest party 𝑃 𝑗 ’s response, say 𝜎𝑖,𝑗 in a
+backup protocol initiated by a corrupt key-owner 𝑃𝑖 , without its
+secret key sk 𝑗 , and then later 𝑃 𝑗 gets corrupted leaking the entire
+secret state of 𝑃 𝑗 – at that point, the simulator (who now also obtains
+sk 𝑗 ) needs to ensure that the leaked secret state is consistent with
+the prior responses. This is handled by programming the random
+oracle to 𝜎𝑖,𝑗 := H(𝑖, sk 𝑗 ) adaptively. In another scenario, when
+a key-owner 𝑃𝑖 gets adaptively corrupt, after a backup session,
+then too such programming is needed. However, now the simulator
+needs to ensure that the public points, published during the backup
+session, are consistent with the secret key sk𝑖 . In this case, the
+simulator just samples uniform random (and hence independent)
+evaluations for public points. Since not more than 𝑡 corruptions
+are allowed, even an unbounded adversary does not obtain more
+
+than (𝑡 + 1) points (it can obtain sk𝑖 from pk𝑖 by, for example, bruteforce). Once sk𝑖 is available, the honest party’s responses to the
+prior backup session, available in the secret state of 𝑃𝑖 , needs to be
+computed via interpolation (this is in contrast to the actual protocol,
+where honest shares are computed independently, and public points
+are interpolated). But, due to the properties of secret sharing, the
+two procedure are identical, as long as up to 𝑡 parties are (adaptively)
+corrupt. We formalize this secret sharing scheme as bottom up secret
+sharing (see Section 5), and formalize this security requirement as
+perfect adaptive simulation security. This formalization maybe of
+independent interest.
+
+1.3
+
+A Domino Effect for variable thresholds
+
+In this paper, we only consider a fixed 𝑡 for our design, though
+our definition allows arbitrary access structures. We notice an
+interesting feature for variable threshold access structure in our
+protocol, which is akin to the so-called domino effect. Let us consider an access structure where each party 𝑃𝑖 has threshold 𝑡𝑖 , and
+𝑡𝑖+1 = (𝑡𝑖 + 1). Now, if the adversary corrupts (𝑡 1 + 1) parties, then it
+may obtain the secret key of 𝑃1 since in our protocol, given a secret
+key, all corresponding shares can be computed deterministically.
+So, now it has (𝑡 1 + 2) = (𝑡 2 + 1) secret keys. Again, it may well be
+possible now that those (𝑡 2 + 1) keys are sufficient to recover the
+secret key of 𝑃2 . Continuing like this one may end up recovering
+all secrets just by corrupting 𝑡 1 + 1 parties. However, in our definition, this does not show up because we do not allow corruption of
+more than 𝑡 1 parties. Also note that, if parties have more unknown
+variables, such as passwords, or other hidden randomnesses, such
+effects can be mitigated, at least partially. We leave further exploration of variable threshold access structure as an interesting future
+work.
+
+1.4
+
+Roadmap
+
+We present the related works in the literature in Section 2. We
+present the necessary preliminaries in Section 3. We formally define Social Key recovery in Section 4. Then we define and construct BUSS in Section 5. Using BUSS we construct our Social Key
+Recovery protocol in Section. 6. We also implement our scheme.
+We benchmark in both regional and geo-distributed settings and
+present evaluations in Section 7. Finally, we briefly describe a number of extensions in Section 8.
+
+2
+
+RELATED WORK
+
+Smart-contract based Social Recovery [8, 20]. In [8] Buterin refers
+to a social key recovery protocol, that is operated via a smart contract, which is executed when a recovery is initiated by the keyowner, the guardians sign a special transaction that recovers the
+fund. However, this is a non-cryptographic solution, and the original secret key is not recovered. In contrast, our solution enables
+the key-owner to recover the original secret-key, which may be
+used for any desired purpose, subsequently. So, from that perspective, our solution is more general and uses cryptography instead of
+relying on the smart-contract’s capability. The only functionality
+we need from the blockchain is to support an immutable bulletin
+board that would store the public points, or their hashes, reliably.
+A similar solution was proposed in [20], which additionally uses
+
+ANARKey: A New Approach to (Socially) Recover Keys
+
+encryption of shares where the decryption key is further split into
+shares. Nevertheless, this also enables recovering funds instead of
+secret keys. Also, both of these solutions suffer from scalability
+issues in our community setting where the same guardian is used
+by many key-owners.
+There are other key-recovery / account recovery designs that
+consider mainly a client-server setting, in that servers are typically
+assumed to store secret information per user, can do much heavier
+computation than the clients, and also are available during recovery.
+Those solutions are not directly compatible in our social recovery
+setting in a community but may offer new technical insights for
+future adaptation. We discuss a few of them below.
+
+the user produces the keycard combined with a user passphrase and
+other personal inputs to build a transaction that sends the account
+funds to a new address. There are other [6] recovery schemes that
+allow funds recovery. The schemes of Sequence [22] and Torus [28]
+also generate multiple keys during the account creation. These keys
+are used to recover the account upon loss of the main signing key.
+Zengo [30] creates secret shares of the wallet key and stores one
+share on the user’s device and the other share is stored securely
+(encrypted under the Zengo public key) with the Zengo servers.
+To execute a transaction, both secret shares are used to sign. To
+recover the key, the user needs to authenticate itself via biometrics
+and then recover the key using the two shares.
+
+Coinbase WaaS: Key-recovery using MPC [17]. Recently in a whitepaper [17], Lindell describes a key recovery solution for Coinbase’s
+wallets-as-a-service or WaaS. The whitepaper describes two designs
+for key-recovery using interactive protocols without formalization.
+In the first design, the secret key is encrypted5 , then uploaded in the
+cloud and the decryption key is stored in a secure enclave. Together,
+the ciphertext and decryption key are sufficient to recover the wallet key. In their second design, the decryption key is split into two
+additive shares, one held by the wallet-owner (i.e. key-owner) in the
+cloud and one held by Coinbase server – as stated in the whitepaper, this design is easier to use and has more resilience against loss
+because the user does not need to store any information on their
+local device. Nevertheless, the designs are not really compatible
+with the social recovery paradigm, because they fundamentally rely
+on existence (and availability) of a reliable server maintained by
+Coinbase, that receives and stores back-up information from each
+user and participates in signing every transaction from the user.
+Compared to that, our design relies on a community with an access
+structure, that can be any (𝑡 + 1) of the whole set of guardians.
+Furthermore, the guardians are not relied upon to store backup
+information, such as ciphertexts or random shares, from the user –
+they only store their own secret keys. Moreover, they only need to
+interact with the user during back-up and recovery – so the internal
+secret storage of a guardian does not increase with the number of
+supported backups.
+
+Login using Web2 methods: Mysten Lab’s ZKLogin [24], Aptos
+KeyLess [1]. In these two very similar designs, the high-level idea is
+to use Web2 authentication methods to enable Web3 authentication.
+The biggest benefit of these approaches is that the user can just be a
+native Web2 user, without ever requiring to manage any key. So, the
+need for any wallet is totally dispensed with. While we recognize
+that these approaches would indeed be greatly useful to bring more
+Web2 user onboard to Web3 ecosystems, they still rely on servers
+controlled by large-scale corporations such as Google and hence is
+not really compatible with the decentralization paradigm of Web3.
+So, any social recovery approach, including our approach may be
+viewed as a complementary solution for a community where users
+are already native to the Web3 ecosystem.
+
+Account Recovery for a Privacy-Preserving Web Service [18]. Account recovery with a server has been considered in a privacypreserving setting, where the account information, such as user
+names, passwords, or even the security questions must be hidden
+from the server. This solution uses cryptographic techniques such
+as oblivious PRFs along with rate limiters to ensure privacy but
+relies on the user remembering the information such as passwords,
+security questions, etc, and relies on external servers.
+There are many more key / account recovery approaches, e.g.
+off-chain backup using 2FA [2], pre-signed transactions [25] which
+are applicable in settings that are even more different from ours.
+For a comprehensive study we refer to the SoK [10]. There are
+protocols [2] that rely on cloud services and allows the user to
+backup-recover their keys via 2-factor authentication methods. In
+the BitGo recovery scheme [5] the user generates a backup key and
+main wallet key. The user needs to store a “keycard” that contains
+an encrypted version of the main and backup key. To recover funds
+5 In more detail, the wallet key is split into two shares, and both shares are encrypted.
+
+Adept Secret Sharing [4]. Bellare, Dai and Rogaway proposed the
+notion of adept secret sharing in [4]. In addition to the standard
+guarantee such as privacy, adept secret sharing offers new properties such as authenticity and error correction. Their authenticity
+notion guarantees that a party can verify whether a reconstructed
+secret is correct or not. This is achieved by storing a commitment of
+the secret in a reliable public storage ahead of time, and then check
+with that after reconstruction. Looking ahead, our social recovery
+scheme achieves malicious security in a similar way by checking
+with the public key which is essentially a commitment of the secret key, though we do not include this property in our notion of
+bottom-up secret sharing. Moreover, their construction uses a PRF
+to generate the coefficients of the secret polynomials, whereas our
+construction (Section 5.1) uses a hash function to define the evaluation points of the secret polynomial. Nevertheless, despite some
+technical similarities, they did not consider a bottom-up approach.
+
+3
+
+NOTATION AND PRELIMINARIES
+
+Notations. We use N to denote a set of positive integers, and [𝑛]
+to denote the set {1, . . . , 𝑛} for any 𝑛 ∈ N. We denote the security
+parameter by 𝜆 ∈ N. A set 𝑋 = {𝑥 1, . . . , 𝑥𝑛 } is denoted as 𝑥 [𝑛] or
+{𝑥𝑖 }𝑖 ∈ [𝑛] . For any subset 𝑆 ⊂ [𝑛], 𝑥𝑆 or {𝑥𝑖 }𝑖 ∈𝑆 denotes the subset
+of 𝑋 containing all 𝑥𝑖 ’s such that 𝑖 ∈ 𝑆. A ordered tuple (𝑥 1, . . . , 𝑥𝑛 )
+is denoted by vector notation 𝑥®[𝑛] or (𝑥𝑖 )𝑖 ∈ [𝑛] . Similarly for any
+subset 𝑆 of [𝑛], 𝑥®𝑆 and (𝑥𝑖 )𝑖 ∈𝑆 are defined.
+Every algorithm takes 𝜆 as an input, even if not always mentioned explicitly; all definitions work for sufficiently large choice of
+𝜆. We use negl to denote a negligible function, which is defined to be
+a function 𝑓 : N → R, such that for every polynomial 𝑝, there exists
+an 𝑛 ∈ N such that for all 𝜆 > 𝑛, it holds that 𝑓 (𝜆) < 1/𝑝 (𝜆). We
+
+Aniket Kate, Pratyay Mukherjee, Hamza Saleem, Pratik Sarkar, and Bhaskar Roberts
+
+• Π Init . In this protocol, a party 𝑃𝑖 locally generates a key
+pair (sk𝑖 , pk𝑖 ) either computing (sk𝑖 , pk𝑖 ) ← KeyGen(1𝜆 )
+or using another algorithm, specified by the protocol.7 Each
+party 𝑃𝑖 publishes pk𝑖 . An execution is denoted by:
+
+use 𝑦 := 𝐷 (𝑥) to denote a deterministic computation and 𝑦 := 𝑥 for
+assignment. Randomized computations are denoted as 𝑦 ← 𝑅(𝑥).
+The symbol ⊥ denotes undefined value, or invalidity.
+We model computationally bounded adversaries by probabilistic
+polynomial time (PPT) algorithms. We also consider our adversaries
+to be interactive algorithms A, which can be rigorously modeled
+as interactive Turing machines. An algorithm A with oracle access
+to an oracle O is denoted as A O (·) . We say a particular problem
+is computationally hard to imply that for any PPT adversary, the
+probability of solving a random instance of that problem is bounded
+by negl(𝜆).
+Adversarial Model. We consider adaptive and malicious PPT adversaries. By malicious we mean that the adversary can behave
+arbitrarily in the protocol. Looking ahead, security against malicious adversary basically comes for free, as a malicious adversary,
+at best, can invoke an abort. Adaptive adversaries can corrupt parties at any time during the execution – this model of corruption is
+much more realistic than a weaker static adversarial model, where
+the corrupted set of parties does not change since the start of the
+execution. Handling adaptive security in our protocol is more challenging. We also assume there is no erasure, so any party’s secret
+state can only be appended, but not deleted – in this setting adaptive corruptions are particularly difficult to analyze, because in a
+simulation any honest party’s secret state at any point must be
+“explained” consistently with respect to prior messages, if that party
+gets corrupted at a later point during the execution. Note that the
+“no erasure” assumption does not contradict the essence or utility
+of a key recovery protocol, because recovery takes place rather
+infrequently, typically for accidental deletion / loss of the secret
+key.
+
+4
+
+DEFINITION
+
+In this section we present our formal definitions. Note that, the social recovery scheme defined below does not require the guardians
+to remember any secret back-up information other than their own a
+priori generated sk using KeyGen. It suffices for the back-up procedure Π Back to produce only public back-up information pub. Also,
+we define the scheme for a setting when there is a single KeyGen.
+But it is straightforward to extend to a setting with multiple partyspecific key-generation procedures.
+Definition 4.1 (Social Key Recovery Scheme (SKR)). Consider 𝑁
+parties 𝑃1, . . . , 𝑃 𝑁 , and define an access structure 𝔄 which consists
+of pair of sets (𝐵, 𝑅) such that 𝐵 ⊆ [𝑁 ] and 𝑅 ⊆ 𝐵. We assume without loss of generality that each party 𝑃𝑖 has an established public
+identity-𝑖.6 Let KeyGen be a key generation algorithm, which produces a pair of keys (sk, pk) ← KeyGen(1𝜆 ). Then a social recovery
+scheme Π SKR between 𝑁 parties 𝑃1, . . . , 𝑃 𝑁 for KeyGen and access
+structure 𝔄 consists of a triple of protocols (Π Init, Π Back, ΠRec ) executed among a subset of the parties in the following order: first
+ΠInit is executed by all parties; then each party may initiate an
+instance of Π Back once with a subset of parties in 𝐵 ⊆ [𝑁 ]; finally
+once 𝑃𝑖 has finished executing Π Back , it can initiate ΠRec arbitrarily
+many times. The protocols have the following syntax:
+
+𝜆 𝑁
+®
+®
+( pk
+[𝑁 ] , sk [𝑁 ] ) ← Π Init (1 , 1 )
+
+Once this is completed, the below protocols may be exe®
+cuted by each party 𝑃𝑖 with the same public input pk
+[𝑁 ] .
+• Π Back : In this protocol, a key owner 𝑃𝑖 who wishes to back
+up her secret key sk𝑖 interacts with a set of guardians
+{𝑃 𝑗 } 𝑗 ∈𝐵 . Each guardian 𝑃 𝑗 uses secret key sk 𝑗 . The protocol concludes with a public back-up string pub𝑖 . We denote
+such execution by:
+® , sk
+® 𝐵∪{𝑖 } )
+pub𝑖 ← ΠBack (𝑖, 𝐵, pk
+𝐵
+• Π Rec : If 𝑃𝑖 wishes to recover sk𝑖 using a recovery set 𝑅, she
+runs this protocol without any secret input with a set of
+guardians {𝑃 𝑗 } 𝑗 ∈𝑅 , each of which uses their secret key sk 𝑗 .
+In addition, pub𝑖 may be used by all parties. At the end of
+this protocol, the key-owner may receive a private output
+sk𝑖 (or ⊥ if unsuccessful). One such execution is denoted
+as:
+® , pub , sk
+® 𝑅)
+sk𝑖 /⊥ ← Π Rec (𝑖, 𝑅, pk
+𝑅
+𝑖
+Correctness. For correctness we require that for any sufficiently large
+𝜆, any 𝑖 ∈ [𝑁 ], any (𝐵, 𝑅) ∈ 𝔄:
+"
+® , pub , sk
+® 𝑅)
+Pr sk𝑖 ← ΠRec (𝑖, 𝑅, pk
+𝑅
+𝑖
+
+𝜆 𝑁
+®
+®
+( pk
+[𝑁 ] , sk [𝑁 ] ) ← Π Init (1 , 1 );
+
+® , sk
+® 𝐵∪{𝑖 } )
+pub𝑖 ← ΠBack (𝑖, 𝐵, pk
+𝐵
+
+#
+=1
+
+Security. For the security of ΠSKR for a given KeyGen and 𝔄, we need
+that for any sufficiently large 𝜆 ∈ N there exists a PPT simulator S
+in the ideal world, such that for any 𝑁 and any PPT adversary A
+we have that:
+Real A (1𝜆 , 1𝑁 , 𝔄, KeyGen, Π SKR ) ≈𝐶
+Ideal S,A (1𝜆 , 1𝑁 , 𝔄, KeyGen, Π SKR ).
+The experiments are described below, where we denote the set of
+corrupted parties at any point as 𝐶 and the set of honest parties as
+𝐻 = [𝑁 ] \ 𝐶. At any point, the adaptive adversary may corrupt an
+honest party and then gets full control of that party and its secret
+state.
+Real A (1𝜆 , 1𝑁 , 𝔄, KeyGen, ΠSKR ):
+• Initialize 𝐶 := ∅ and a list 𝐿 := ∅.
+𝜆 𝑁
+®
+®
+®
+• Run ( pk
+[𝑁 ] , sk [𝑁 ] ) ← Π Init (1 , 1 ) and give pk [𝑁 ] to the
+O
+(·),O
+(·),O
+Rec (·),ORO (·) .
+Back
+adversary with oracle access: A Cor
+• When A returns an output Out A , output (Out A , Out H )
+where Out H is the output of all honest parties. Each honest
+party’s output is undefined, until that party initiates ΠRec .
+If that execution succeeds then the output is defined to be
+the recovered secret key, sk𝑖 , otherwise it is defined to be
+⊥. If no such session is ever initiated, then the output stays
+undefined at the end.
+7 It is also possible that a party sets either or both of the keys to ⊥. In our protocol,
+
+6 For example the generated public key can serve as an identity. Without loss of
+
+generality we denote the identity of 𝑃𝑖 simply by an integer-𝑖 .
+
+however, we consider each party executes a standard KeyGen, e.g. for specific signature
+schemes.
+
+ANARKey: A New Approach to (Socially) Recover Keys
+
+Ideal A,A (1𝜆 , 1𝑁 , 𝔄, KeyGen, Π SKR ):
+• Initialize 𝐶 := ∅ and a list 𝐿 := ∅.
+𝜆 𝑁
+®
+®
+®
+• Run ( pk
+[𝑁 ] , sk [𝑁 ] ) ← Π Init (1 , 1 ) and give pk [𝑁 ] to the
+S
+(·),S
+(·),S
+Cor
+Rec (·),SRO (·) .
+Back
+adversary with oracle access: A
+• When A returns an output Out A , output (Out A , Out H )
+and stop, where Out H is defined below within SRec .
+Here ORO is a random oracle and SRO is the random oracle simulated by the simulator. The rest of the oracles are defined below,
+where we highlight the part where it differs in case of simulator by
+blue.
+OCor (𝐶 ′ )/SCor (𝐶 ′ ):
+• Update 𝐶 := 𝐶 ∪ 𝐶 ′ . Run CorCheck𝔄 (𝐿, 𝐶), if it returns 1,
+then abort.
+• If not, then for each 𝑖 ∈ 𝐶 ′ , give the secret state of party
+® 𝐶 ′ to S, who sends a
+𝑃𝑖 to A. For SCor , instead give sk
+simulated secret state to A.
+OBack (𝑖, 𝐵)/SBack (𝑖, 𝐵):
+• If there is an entry (𝑖, ∗, ∗) ∈ 𝐿, then skip.
+® , sk
+® 𝐵∪{𝑖 } ) using the honest
+• Else run pub ← Π Back (𝑖, 𝐵, pk
+𝐵
+parties 𝑃𝐻 and allowing A to control the corrupt parties
+®𝐻
+𝑃𝐶 . For SBack , let S control the honest parties without sk
+– A still controls the corrupt parties.
+• Then store (𝑖, 𝐵, pub) into 𝐿.
+• Run CorCheck𝔄 (𝐿, 𝐶), if it returns 1, then abort.
+ORec (𝑖, 𝑅)/SRec (𝑖, 𝑅):
+
+Out H . If the recovery fails, then the output is defined to be ⊥. The
+simulated oracle SRec handles this case in the proof.
+
+5
+
+BOTTOM-UP SECRET SHARING
+
+Consider a set of 𝑁 parties 𝑃1, . . . , 𝑃 𝑁 , where each party 𝑃𝑖 has an
+established identity denoted simply by 𝑖 ∈ [𝑁 ]. We formalize a
+secret-sharing scheme for a (𝑡 + 1)-out-of-(𝑛 − 1) access structure,
+(first used in [3] to construct multiverse threshold signatures, albeit
+without any formalization), that allows each party to choose their
+shares independently of the other parties’ shares and even of the
+secret.
+Definition 5.1 (Bottom-Up Secret Sharing (BUSS)). For 𝑛, 𝑡, 𝑁 ∈ N
+such that 𝑡 + 1 ≤ 𝑛 − 1 < 𝑁 , a bottom-up secret sharing scheme for
+a (𝑡 + 1)-out-of-(𝑛 − 1) threshold access structure over the set [𝑁 ]
+consists of algorithms with the following syntax:
+• Share(𝑠, 𝜎®𝐵 , 𝐵): Takes as input a secret 𝑠, (𝑛 − 1) shares 𝜎®𝐵 ,
+and the corresponding set of indices 𝐵 ⊆ [𝑁 ] \ {𝑖} such
+that |𝐵| = 𝑛 − 1. Then Share outputs a public value 𝜑.
+• Recon(𝜑, 𝜎®𝑅 , 𝑅): Takes as input the public value 𝜑, (𝑡 + 1)
+shares 𝜎®𝑅 , and the corresponding set of indices 𝑅 ⊆ [𝑁 ]
+such that |𝑅| = 𝑡 + 1. Then Recon outputs a secret 𝑠 or
+outputs ⊥ if the procedure fails.
+Furthermore, the BUSS scheme satisfies the following notions of
+correctness and perfect adaptive simulation security.
+Correctness. For any secret 𝑠, any sets 𝑅, 𝐵 such that 𝑅 ⊆ 𝐵 ⊂
+[𝑁 ], |𝑅| = (𝑡 + 1), |𝐵| = (𝑛 − 1), and any 𝜎®𝐵 :
+
+• If there is no entry (𝑖, ∗, ∗) in 𝐿, then skip.
+
+
+Pr 𝑠 ← Recon(𝜑, 𝜎®𝑅 , 𝑅) 𝜑 ← Share(𝑠, 𝜎®𝐵 , 𝐵) = 1
+® , pub, sk
+® 𝑅)
+• Else retrieve (𝑖, 𝐵, pub) from 𝐿 and run ΠRec (𝑖, 𝑅, pk
+𝑅
+using the honest parties 𝑃𝐻 and allowing A to control the
+Perfect Adaptive Simulation Security. For any unbounded adversary
+corrupt parties 𝑃𝐶 . For SRec , let S control the honest parA, there exists a pair of algorithms (SimShare, SimComb) such
+® 𝐻 – A still controls the corrupt parties. Also,
+ties without sk
+that the following two distributions are identical.
+the honest party’s output vector Out H is defined within
+• RealSh A :
+SRec .
+– Receive (𝑠, 𝜎®𝐶 , 𝐶, 𝐵) from A, such that 𝐶 ⊆ 𝐵, |𝐶 | ≤ 𝑡,
+The following predicate CorCheck𝔄 checks whether it is posand |𝐵| = (𝑛 − 1).
+sible for the adversary to recover an honest party’s key trivially
+– Sample 𝜎®𝐵\𝐶 uniformly at random.
+through corrupting more than what is allowed.
+– Run 𝜑 ← Share(𝑠, 𝜎®𝐵 , 𝐵), and give 𝜑 to A.
+CorCheck𝔄 (𝐿, 𝐶):
+– When A queries (Share, 𝐶 ′ ) for 𝐶 ′ ⊆ 𝐵 \ 𝐶, update
+𝐶 := 𝐶 ∪ 𝐶 ′ . If |𝐶 | > 𝑡, then abort. If not, then give 𝜎®𝐶 ′
+• If there exists an (𝑖, 𝐵, pub) ∈ 𝐿 and 𝑅 ⊆ 𝐶 for which 𝑖 ∈ 𝐻
+to A.
+and (𝐵, 𝑅) ∈ 𝔄 then return 1. Otherwise, return 0.
+– Finally give 𝜎®𝐵\𝐶 .
+Remark 4.1. Here for simplicity we assume that the backup protocol
+– Output whatever A returns.
+is executed only once by each party. In reality it can be executed
+• IdealSh A :
+multiple times. Our definition can be extended to that easily. Looking
+– Receive (𝑠, 𝜎®𝐶 , 𝐶, 𝐵) from A, such that 𝐶 ⊆ 𝐵, |𝐶 | ≤ 𝑡,
+ahead, our construction (given in Section 6), would need some simple
+and |𝐵| = (𝑛 − 1).
+changes to make it work in that setting. In particular, a unique session
+– Run 𝜑, 𝜏® ← SimShare(𝐶) and give 𝜑 to A.
+id, which, in combination with the party id, should be used in place
+– When A queries (Share, 𝐶 ′ ) for 𝐶 ′ ⊆ 𝐵 \ 𝐶, update
+of only party id.
+𝐶 := 𝐶 ∪𝐶 ′ and 𝜎®𝐶 ′ = 𝜏®𝐶 ′ . If |𝐶 | > 𝑡, then abort. If not,
+then give 𝜎®𝐶 ′ to A.
+Remark 4.2. We stress that our protocol captures security with abort,
+–
+Finally compute 𝜎®𝐵\𝐶 ← SimComb(𝑠, 𝐵, 𝐶, 𝜎®𝐶 , 𝜑) and
+in that a malicious adversary (in our case, can also be adaptive) can
+give 𝜎®𝐵\𝐶 to A.
+define the honest party’s output to be abort. This is captured formally
+–
+Output whatever A returns.
+by our definition by including all honest party’s outputs in the variable
+Out H . At the beginning each honest party’s output stays undefined.
+For every honest party-𝑖, that initiates a recovery protocol Π Rec , if a
+recovery succeeds, then a correct output, namely sk𝑖 is included into
+
+The notion of perfect adaptive simulation security says morally that
+the real-world 𝜑 does not reveal any information about 𝑠 or any
+party’s shares to the adversary. Note that in IdealSh A , SimShare
+
+Aniket Kate, Pratyay Mukherjee, Hamza Saleem, Pratik Sarkar, and Bhaskar Roberts
+
+computes the public value 𝜑 given only 𝐶 as input, so 𝜑 does not
+depend on 𝑠 or on any party’s shares.
+Furthermore, we allow the adversary to adaptively corrupt parties by making queries of the form (Share, 𝐶 ′ ). On such a query,
+the adversary learns the shares 𝜎®𝐶 ′ as long as the total number of
+parties that they’ve corrupted remains ≤ 𝑡.
+
+5.1
+
+Constructing BUSS
+
+We construct a simple BUSS scheme for a (𝑡 + 1)-out-of-(𝑛 − 1)
+threshold access structure over a finite field F as follows:
+• Share(𝑠, 𝜎®𝐵 , 𝐵):
+Define a polynomial 𝑓 over F of degree (𝑛 − 1) such that
+𝑓 (0) := 𝑠 and for all 𝑗 ∈ 𝐵:𝑓 ( 𝑗) := 𝜎 𝑗 . Then output 𝜑 :=
+𝑓 (−1), . . . , 𝑓 − (𝑛 − 𝑡 − 1) .
+• Recon(𝜑, 𝜎®𝑅 , 𝑅):
+
+Parse 𝜑 as 𝑓 (−1), . . . , 𝑓 − (𝑛 − 𝑡 − 1) . Concatenate these
+(𝑛 − 𝑡 − 1) points with the following |𝑅| = 𝑡 + 1 points:
+{𝑓 ( 𝑗) := 𝜎 𝑗 } 𝑗 ∈𝑅 . Then use Lagrange interpolation to compute the unique polynomial 𝑓 of degree 𝑛 − 1 that passes
+through those 𝑛 points. Finally output 𝑠 := 𝑓 (0).
+Theorem 5.1 (BUSS Construction). The above construction is a
+bottom-up secret sharing scheme according to Definition 5.1.
+Proof. We show correctness and perfect adaptive simulation
+security separately.
+Correctness: The polynomial 𝑓 that is computed by Share(𝑠, 𝜎®𝐵 , 𝐵)
+has degree (𝑛 − 1), so it is uniquely determined by any 𝑛 points
+on the polynomial. Next, Recon knows the value of 𝑓 (𝑥) for every
+𝑥 ∈ {−1, . . . , −(𝑛 − 𝑡 − 1)} ∪ 𝑅. This constitutes 𝑛 points on the
+polynomial because |𝑅| = 𝑡 + 1. Then Recon will reconstruct the
+polynomial 𝑓 that was computed by Share, and it will compute the
+correct value 𝑠 = 𝑓 (0).
+Perfect Adaptive Simulation Security: Let us first construct
+SimShare(𝐶) and SimComb(𝑠, 𝐵, 𝐶, 𝜎®𝐶 , 𝜑) as follows:
+$
+
+$
+
+• SimShare(𝐶): Sample 𝜑 ← F𝑛−𝑡 −1 and 𝜏® ← F𝑛−1 , and
+output (𝜑, 𝜏).
+®
+• SimComb(𝑠, 𝐵, 𝐶, 𝜎®𝐶 , 𝜑):
+(1) Partition 𝐻 = 𝐵 \ 𝐶 into two disjoint sets 𝐻 ′ and 𝐻 ′′
+such that |𝐻 ′ | = 𝑡 − |𝐶 |. 8
+
+that |𝐻 ′ | = 𝑡 − |𝐶 1 |. This is possible assuming that |𝐶 1 | ≤ 𝑡. Note
+that 𝐵 can be partitioned into (𝐶 0, 𝐶 1 \𝐶 0, 𝐻 ′, 𝐻 ′′ ).
+The variables (𝑠, 𝜎®𝐶1 , 𝜎®𝐻 ′ , 𝜑) together define 𝑛 points on the
+polynomial 𝑓 . Since 𝑓 has degree (𝑛 − 1), these 𝑛 points uniquely
+determine 𝑓 . Then for any (𝑠, 𝜎®𝐶1 , 𝜎®𝐻 ′ ) and 𝜑, there is a unique
+𝜎®𝐻 ′′ such that 𝜑 = Share(𝑠, (𝜎®𝐶1 ∪ 𝜎®𝐻 ′ ∪ 𝜎®𝐻 ′′ ), 𝐵).
+Furthermore, (𝑠, 𝜎®𝐶1 , 𝜎®𝐻 ′ , 𝜎®𝐻 ′′ ) also define 𝑛 points on 𝑓 . So
+for any (𝑠, 𝜎®𝐶1 , 𝜎®𝐻 ′ ) and 𝜎®𝐻 ′′ , there is a unique 𝜑 such that 𝜑 =
+Share(𝑠, (𝜎®𝐶1 ∪ 𝜎®𝐻 ′ ∪ 𝜎®𝐻 ′′ ), 𝐵).
+In RealSh A , 𝜎®𝐵\𝐶0 is sampled uniformly at random. Then 𝜑 is
+uniformly random due to the randomness of 𝜎®𝐻 ′′ which is hidden
+from the adversary. Furthermore, on each query (Share, 𝐶 ′ ), A
+receives freshly random shares 𝜎®𝐶 ′ that are independent of their
+view so far, or they receive ⊥. Finally, A receives 𝜎®𝐻 ′ , which is
+uniformly random and independent of A’s view so far, and 𝜎®𝐻 ′′ ,
+which is the unique value for which 𝜑 = Share(𝑠, (𝜎®𝐶1 ∪ 𝜎®𝐻 ′ ∪
+𝜎®𝐻 ′′ ), 𝐵).
+In IdealSh A , 𝜑 is sampled uniformly at random by SimShare.
+Then on each query (Share, 𝐶 ′ ), A receives 𝜎®𝐶 ′ = 𝜏®𝐶 ′ , which was
+sampled (as candidate future corruption shares) independently of
+the adversary’s view so far, by SimShare. Finally, SimComb samples
+𝜎®𝐻 ′ uniformly at random and chooses 𝜎®𝐻 ′′ to be the unique value
+for which 𝜑 = Share(𝑠, (𝜎®𝐶1 ∪ 𝜎®𝐻 ′ ∪ 𝜎®𝐻 ′′ ), 𝐵).
+This shows that the distribution of the values provided to A is
+the same in RealSh A and IdealSh A . Then A’s final output will be
+identically distributed in both hybrids.
+□
+This concludes the proof of the theorem.
+
+6
+
+□
+
+OUR SOCIAL KEY RECOVERY SCHEME
+
+Key Generation. We consider a KeyGen algorithm which generates a key-pair (sk, pk). KeyGen has the following requirements.
+(1) We assume that for every pk there exists a unique sk such
+that (pk, sk) are a valid output of KeyGen.
+(2) One can efficiently verify whether a given (pk, sk) are a
+valid output of KeyGen.
+(3) It is hard to guess sk given pk. More formally, we say that
+for any PPT adversary A,
+h
+i
+Pr A (1𝜆 , pk) = sk : (sk, pk) ← KeyGen(1𝜆 ) ≤ negl(𝜆)
+
+$
+
+(2) Sample 𝜎®𝐻 ′ ← F𝑡 − |𝐶 | .
+(3) Use (𝑠, 𝜎®𝐶 , 𝜎®𝐻 ′ , 𝜑) to define 𝑛 points:
+(0, 𝑠 ), ( 𝑗, 𝜎 𝑗 ) 𝑗 ∈𝐶∪𝐻 ′ , (−1, 𝜑 1 ), . . . , (− (𝑛 − 𝑡 − 1), 𝜑𝑛−𝑡 −1 )
+
+Interpolate the unique polynomial 𝑓 of degree 𝑛 − 1
+that passes through these points.
+(4) For each 𝑗 ∈ 𝐻 ′′ , compute 𝜎 𝑗 = 𝑓 ( 𝑗). Then output
+𝜎®𝐻 = 𝜎®𝐻 ′ ∪ 𝜎®𝐻 ′′ .
+Now, we prove the following claim.
+Claim 5.1. The outputs of RealSh A and IdealSh A are identically
+distributed.
+Proof. Let 𝐶 0 be the value of 𝐶 at the start of the game (RealSh A
+or IdealSh A ), and let 𝐶 1 be the value of 𝐶 at the end, after the adversary’s Share queries. Let us partition 𝐵\𝐶 1 into 𝐻 ′ and 𝐻 ′′ such
+8 This is possible because |𝐶 | ≤ 𝑡 and 𝑡 + 1 ≤ |𝐵 | . Then |𝐶 ∪ 𝐻 ′ | = 𝑡 .
+
+Let this hardness assumption be known as PKeyGen .
+For example, one may consider keys of the form (pk = 𝑔sk ) for
+a cyclic group generated by 𝑔 where discrete log is hard – this
+is a widely in many schemes, including BLS signatures, Schnorr
+signatures, El-Gamal encryptions etc. It is easy to check that this
+type of key generation does satisfy all of the above requirements.
+We describe our main construction Π cmnty to socially recover
+keys for any KeyGen satisfying the above conditions in a community of 𝑁 parties 𝑃1, . . . , 𝑃 𝑁 for a (𝑡 + 1)-out-of-𝑛 threshold
+access structure for any 𝑡 < 𝑛 ≤ 𝑁 .9 We assume a hash function H : F → F, modeled as a random oracle. The construction is
+provided in Figure 2.
+9We note that the backup set of our access structure is of size (𝑛 − 1) , whereas the
+
+recovery set is of size (𝑡 + 1) . However, we call this access structure (𝑡 + 1) -out-of-𝑛 ,
+as opposed to (𝑡 + 1) -out-of- (𝑛 − 1) because also accounting for the secret, the total
+number of secret/share in the system is 𝑛 .
+
+ANARKey: A New Approach to (Socially) Recover Keys
+
+– ΠInit (1𝜆 , 1𝑁 ): Each party 𝑃𝑖 :
+• Runs (sk𝑖 , pk𝑖 ) ← KeyGen(1𝜆 ).
+• Publishes pk𝑖 and store sk𝑖 .
+® , sk
+® 𝑅∪{𝑖 } ) : A party 𝑃𝑖 runs this protocol as a
+– ΠBack (𝑖, 𝐵, pk
+𝐵
+key-owner with a set of (𝑛 − 1) guardians {𝑃 𝑗 } 𝑗 ∈𝐵 as follows:
+• On request from 𝑃𝑖 each guardian 𝑃 𝑗 computes 𝜎𝑖,𝑗 :=
+H(𝑖, sk 𝑗 ) and send that to 𝑃𝑖 .
+• The key-owner, on receiving (𝜎𝑖,𝑗 ) 𝑗 ∈𝐵 , define 𝑠 := sk𝑖
+and compute 𝜑 ← Share(𝑠, (𝜎𝑖,𝑗 ) 𝑗 ∈𝐵 , 𝐵) and publish
+pub := 𝜑.
+®
+®
+– ΠRec (𝑖, 𝑅, pk
+[𝑁 ] , pub, sk𝑅 ): A party 𝑃𝑖 runs this protocol as
+a key-owner with a set of (𝑡 +1) guardians {𝑃 𝑗 } 𝑗 ∈𝑅 as follows:
+• On request from 𝑃𝑖 each guardian 𝑃 𝑗 computes 𝜎𝑖,𝑗 :=
+H(𝑖, sk 𝑗 ) and sends that to 𝑃𝑖 .
+• The key-owner, on receiving (𝜎𝑖,𝑗 ) 𝑗 ∈𝑅 , retrieve 𝜑 :=
+pub and compute 𝑠 ← Recon(𝜑, (𝜎𝑖,𝑗 ) 𝑗 ∈𝑅 , 𝑅).
+• Then 𝑃𝑖 checks whether (𝑠𝑖 , pk𝑖 ) is a valid key-pair.
+If yes then privately output sk𝑖 := 𝑠𝑖 , else output ⊥.
+Figure 2: The SKR protocol Π cmnty
+Remark 6.1. As mentioned earlier, instead of 𝑖 we could also use
+pk𝑖 , and compute 𝜎𝑖,𝑗 := H(pk𝑖 , sk 𝑗 ) instead. This does not change
+anything. Also, recall that if multiple back session is executed by the
+same key-owner, we need a unique session id sid, which would be used
+to derive 𝜎𝑖,𝑗 := H(sid, pk𝑖 , sk 𝑗 ) – this would ensure that the shares
+derived in different sessions by the same guardian are uncorrelated
+(as long as sk 𝑗 is hidden).
+Remark 6.2. Note that, for the protocol to work, the public values
+pub just needs to be stored reliably, such that, they can be accessed
+unaltered whenever needed. We may use immutable bulletin boards
+to implement that, though it does not need to be accessed by all
+parties, but only the key-owner during recovery. Therefore, just a
+reliable storage accessible by the owner may suffice. However, in case
+of permanent disappearance, e.g. demise of the owner, it is important
+that the public value can be accessed by non-owners to recover the
+secret, otherwise the secret will be permanently lost – even if all (𝑛 −1)
+guardians come together they can not recover the secret, as the secret
+polynomial in the BUSS scheme has degree (𝑛 − 1).
+Now we analyze our protocol formally. The access structure
+𝔗𝑛,(𝑡 +1) for which the scheme is secure contains all (𝐵, 𝑅) for which
+|𝑅| = (𝑡 + 1), |𝐵| = (𝑛 − 1) and 𝑅 ⊆ 𝐵. It immediately extends to 𝐵
+of arbitrary size, as long as it is a superset of 𝑅 – we stick to equal
+sized 𝐵 for simplicity of exposition.
+Theorem 6.1. Let KeyGen be a standard key-generation algorithm
+for which PKeyGen holds. Then the protocol Πcmnty among a community of 𝑁 parties 𝑃1, . . . , 𝑃 𝑁 is a secure social key recovery scheme – as
+per Definition 4 – for access structure 𝔗𝑛,(𝑡 +1) for any 𝑡 + 1 < 𝑛 ≤ 𝑁
+against all polynomial-time malicious adaptive adversaries that corrupt ≤ 𝑡 parties.
+Proof. To prove the theorem we need to show that for any
+adaptive and malicious adversary A, there exists a simulator S
+
+such that the adversary’s interactions with the oracles in the real
+world are indistinguishable from its interactions with the simulated
+oracles in the ideal world.
+We construct the simulator as follows:
+The simulator S.
+• Secret states:
+– The simulator maintains a set 𝑈 which contains elements of the form (𝑖, sk𝑖 , 𝐵, 𝜎®𝐵 , pub𝑖 ) which is essential
+part of the secret state of a key owner 𝑃𝑖 from an execution of backup protocol ΠBack with the adversary if,
+at the time of execution 𝑃𝑖 was an honest party. There
+can be partial entries such as (𝑖, ⊥, 𝐵, 𝜎®𝐶∩𝐵 , pub𝑖 ) . If
+𝑃𝑖 gets corrupted at some point, the partial entry is
+updated to a complete entry (𝑖, sk𝑖 , 𝐵, 𝜎®𝐵 , pub𝑖 ), and is
+given to the adversary as part of a secret state. Note
+that, if 𝑃𝑖 is corrupt during the execution of Π Back ,
+then no such entry is made to 𝑈 .
+– The simulator also maintains a set 𝑉 containing entries of the form ( 𝑗, 𝜎𝑖,𝑗 ). This set is populated when
+a backup protocol is executed from an already corrupt key-owner 𝑃𝑖 , and 𝑃 𝑗 was an honest party at that
+moment. Note that, elements of this set were already
+known to the adversary as transcripts of the backup
+protocol even when 𝑃 𝑗 was honest. Nevertheless, since
+no erasure is assumed, this should be included in the
+state, and would be given to the adversary on corruption to make the simulation accurate.
+– The entire simulated secret state of any party 𝑃𝑖 consists of (𝑖, sk𝑖 , 𝐵, 𝜎®𝐵 , pub𝑖 ) and {(𝑖, 𝜎𝑘,𝑖 )}𝑘 . On an adaptive corruption 𝑃𝑖 , (sk𝑖 , (𝜎®𝐵 ), {𝜎𝑖,𝑘 }𝑘 ) is handed over
+to the adversary.
+• Random Oracle:
+(1) 𝑅sim (𝑖, 𝑗): 𝑅sim is internally computed and possibly
+programmed by S and accepts queries of the form
+(𝑖, 𝑗) ∈ [𝑁 ] × [𝑁 ]. Upon receiving query (𝑖, 𝑗), check
+if (𝑖, 𝑗) has previously been queried to 𝑅sim . If so, then
+give the same response as the previous time. If not,
+$
+
+then sample 𝑦 ← F, store the equation 𝑅sim (𝑖, 𝑗) = 𝑦,
+and respond with 𝑦.
+(2) SRO (𝑥): Upon a RO query 𝑥:
+(a) Check if (1) 𝑥 = (𝑖, sk) for some 𝑖 ∈ [𝑁 ] and
+some key sk, and (2) (sk, pk 𝑗 ) is a valid key-pair
+for some 𝑗 ∈ [𝑁 ]. If both conditions are satisfied,
+then respond with 𝑅sim (𝑖, 𝑗).
+(b) If the conditions are not both satisfied, then
+check if 𝑥 has been previously queried to 𝐻 . If so,
+then give the same response as the previous time.
+$
+
+If not, then sample 𝑦 ← F, store the equation
+𝐻 (𝑥) = 𝑦, and respond with 𝑦.
+• The oracle SBack (𝑖, 𝐵) is simulated as follows:
+(1) If 𝑖 ∈ 𝐻 , then when the adversary returns (𝜎𝑖,𝑗 ) 𝑗 ∈𝐶∩𝐵 ,
+then run 𝜑𝑖 ← SimShare(𝐶 ∩𝐵) and publish 𝜑𝑖 as pub𝑖 .
+Also append (𝑖, ⊥, 𝐵, (𝜎𝑖,𝑗 ) 𝑗 ∈𝐶∩𝐵 , pub𝑖 ) in the set 𝑈 .
+(2) If 𝑖 ∈ 𝐶, then on behalf of each honest party 𝑃 𝑗 such
+that 𝑗 ∈ 𝐻 ∩𝐵, compute 𝜎𝑖,𝑗 := 𝑅sim (𝑖, 𝑗), and send 𝜎𝑖,𝑗
+
+Aniket Kate, Pratyay Mukherjee, Hamza Saleem, Pratik Sarkar, and Bhaskar Roberts
+
+• If EBad happens but 𝑗 ≠ 𝑗 ∗ then abort. Call this event
+EAbort .
+𝑗∗
+• Else when EBad happens (A queries SRO (𝑖, sk 𝑗 ∗ )), then
+send sk 𝑗 ∗ to the PKeyGen -challenger as the answer. Call
+this event EBreak .
+𝑗
+
+as party 𝑃 𝑗 ’s response to the adversary. Also append
+( 𝑗, 𝜎𝑖,𝑗 ) to set 𝑉 .
+• The oracle SCor (𝐶 ′ ) is simulated as follows. For each 𝑖 ∈ 𝐶 ′ ,
+the simulator receives sk𝑖 and does the following:
+(1) It searches for an entry (𝑖, ⊥, 𝐵, (𝜎𝑖,𝑗 ) 𝑗 ∈𝐵∩𝐶0 , pub𝑖 ) in
+𝑈 , where 𝐶 0 is the value of 𝐶 at the time the entry was
+created. If found, then:
+(a) Let 𝐶 1 = 𝐶\𝐶 0 . For each 𝑗 ∈ 𝐶 1 , compute 𝜎𝑖,𝑗 =
+𝑅sim (𝑖, 𝑗).
+(b) Compute values (𝜎𝑖,𝑗 ) 𝑗 ∈𝐵\𝐶 ← SimComb(sk𝑖 ,
+𝐵, (𝜎𝑖,𝑗 ) 𝑗 ∈𝐵∩𝐶 , pub𝑖 ). For each 𝑗 ∈ 𝐵 \ 𝐶, program 𝑅sim (𝑖, 𝑗) := 𝜎𝑖,𝑗 .
+(c) Update the entry in 𝑈 as (𝑖, sk𝑖 , 𝐵, (𝜎𝑖,𝑗 ) 𝑗 ∈𝐵 , pub𝑖 ).
+Finally, send (sk𝑖 , (𝜎𝑖,𝑗 ) 𝑗 ∈𝐵 , {𝜎𝑖,𝑘 }𝑘 ) to A as the
+secret state, where {𝜎𝑖,𝑘 }𝑘 are all entries (if no
+such entry is found, skip this) {(𝑖, 𝜎𝑖,𝑘 )} with the
+same 𝑖, retrieved from 𝑉 .
+(2) If such an entries are not found in 𝑈 or 𝑉 , then send
+sk𝑖 as the only secret state.
+• The oracle SRec (𝑖, 𝑅) is simulated as follows.
+(1) If 𝑖 ∈ 𝐻 , then no non-trivial information is sent to the
+adversary. However, based on whether the recovery
+succeeds or not it needs to define 𝑖’s output within
+Out H . Therefore, it receives the responses 𝜎𝑖,𝑗 for each
+corrupt 𝑗 ∈ 𝑅 ∩ 𝐶 from the adversary. For each honest
+guardian 𝑗 ∈ 𝑅 ∩ 𝐻 , compute 𝜎𝑖,𝑗 = 𝑅sim (𝑖, 𝑗). Then
+it recovers 𝑠 ← Recon(𝜑𝑖 , 𝜎®𝑅 , 𝑅) where 𝜑𝑖 is obtained
+from 𝑈 . It verifies whether 𝑠 is consistent with pk𝑖 . If
+yes, then define the output of party-𝑖 with Out H to be
+𝑠, otherwise define it to be ⊥.
+simulation is trivial, as nothing is sent to the adversary
+(because the final output is private).
+(2) If 𝑖 ∈ 𝐶, then for each honest guardian 𝑗 ∈ 𝑅 ∩ 𝐻 ,
+compute 𝜎𝑖,𝑗 = 𝑅sim (𝑖, 𝑗) and send 𝜎𝑖,𝑗 to 𝑃𝑖 .
+Now for any given honest party 𝑗 ∈ [𝐻 ], let us define a bad event,
+𝑗
+EBad , to be when A queries SRO on (𝑖, sk 𝑗 ) for any 𝑖 ∈ 𝐶. Next,
+
+𝑗∗
+
+Now, clearly Pr[EBreak ] ≥ Pr[EBad ] ≥ (1/𝑁 ) · Pr[EBad ]. Pr[EBad ]
+must be negligible because Pr[EBreak ] is negligible.
+□
+There are two differences between Real and Ideal from A’s point
+of view. (1) In Ideal, S implements the random oracle using SRO and
+𝑅sim . The second difference (2) appears when 𝑃𝑖 is corrupted after
+𝑃𝑖 serves as the key owner in an execution of Π Back . In Real, the
+values (𝜎𝑖,𝑗 ) 𝑗 ∈𝐵\𝐶 are chosen randomly, and 𝜙𝑖 is computed as 𝜙𝑖 =
+Share(𝑠, (𝜎𝑖,𝑗 ) 𝑗 ∈ [𝐵 ] ). In Ideal, 𝜙𝑖 is computed by SimShare(𝐶 ∩ 𝐵),
+and (𝜎𝑖,𝑗 ) 𝑗 ∈𝐵\𝐶 is computed by SimComb(sk𝑖 , (𝜎𝑖,𝑗 ) 𝑗 ∈𝐵∩𝐶 , pub𝑖 ).
+(1): S simulates the random oracle correctly if EBad does not
+occur. For every distinct query that A makes to SRO , S samples
+the response uniformly and independently at random. Furthermore,
+if A queries SRO (𝑖, sk 𝑗 ) for some 𝑗 ∈ [𝑁 ], the output will be the
+same as 𝜎𝑖,𝑗 , which S provides on behalf of 𝑃 𝑗 whenever 𝑃 𝑗 serves
+as a guardian for 𝑃𝑖 . Finally, in SCor , S programs 𝑅sim (𝑖, 𝑗) to 𝜎𝑖,𝑗
+for every 𝑗 ∈ 𝐵\𝐶. The adversary has not yet queried 𝑅sim on (𝑖, 𝑗),
+assuming that EBad does not happen. So the adversary’s view is
+the same as if 𝑅sim (𝑖, 𝑗) were set to a random initial value and were
+never reprogrammed.
+(2): The distribution of ((𝜎𝑖,𝑗 ) 𝑗 ∈𝐵\𝐶 , 𝜙𝑖 ) is the same in Real and
+Ideal due to the perfect adaptive simulation security of the secret
+sharing scheme. The problem of distinguishing Real and Ideal exactly corresponds to the problem of distinguishing RealSh and
+IdealSh.
+This concludes the proof.
+□
+
+7
+
+EVALUATION
+
+We present our empirical evaluations in this section.
+
+𝑗
+
+let EBad = ∪ 𝑗 EBad . We argue that this happens with negligible
+probability in the lemma stated below.
+Lemma 6.1. For any PPT adversary A, the probability of EBad
+happening is negligible in 𝜆, as long as the problem PKeyGen is computationally hard.
+Proof. In the reduction the challenger for PKeyGen samples
+(sk∗, pk∗ ) ← KeyGen(1𝜆 ) and gives pk∗ to the reduction. The reductions simulate the ideal world experiment Ideal A with (sk∗, pk∗ ) =
+(sk 𝑗 ∗ , pk 𝑗 ∗ ) for a uniform random 𝑗 ∗ ∈ [𝑁 ] as follows:
+$
+
+(1) Sample 𝑗 ∗ ← [𝑁 ].
+(2) Set pk 𝑗 ∗ = pk∗ . Implicitly, sk 𝑗 ∗ = sk∗ because every pk has a
+unique sk for a standard KeyGen. Then sample (sk 𝑗 , pk 𝑗 ) ←
+KeyGen(1𝜆 ) for every 𝑗 ∈ [𝑁 ]\{ 𝑗 ∗ } and send A (the SKR
+®
+adversary) the values pk
+[𝑁 ] .
+(3) Now simulate the oracles SRO , SBack , SRec , SCor as above
+in the Ideal A (1𝜆 , 1𝑁 , 𝔄, KeyGen, ΠSKR ) with the following
+conditions:
+
+7.1
+
+Implementation and Setup
+
+We implement our scheme in Rust utilizing the RustCrypto’s ellipticcurves [13] library for cryptographic operations and tokio [27] for
+network communication with ∼ 2572 lines of code. We conduct
+our experiments on Google Cloud Platform (GCP) with each entity
+realized as a separate GCP N2D instance, with a 2.25 GHz AMD
+EPYC CPU and 16 GB of RAM. We evaluate the performance of our
+scheme in both LAN and WAN settings:
+LAN setting: The GCP N2D instances for all parties are co-located
+within the same geographical region, achieving an average bandwidth of 880.64 MB/s and a network latency of 1.3 ms.
+WAN setting: The instances for all parties are geo-distributed.
+This configuration yields an average bandwidth of 18.5 MB/s and a
+network latency of 138.0 ms.
+Each data point presented in our results represents the average
+of 10 runs. We assess the performance of our system using four
+different combinations of elliptic curves and hash functions. To
+evaluate the scalability of our scheme, we conduct experiments by
+varying the number of parties.
+
+ANARKey: A New Approach to (Socially) Recover Keys
+
+Figure 3: Compute cost comparison for creating a key backup and performing a key recovery for 𝑛 = 7 (𝑛 − 1 guardians),
+considering {1, 2, 4} parallel threads.
+
+7.2
+
+Experimental Results
+
+In this section, we evaluate the performance of our social key recovery scheme for key backup and recovery operations. Figure 3
+illustrates the computation cost (excluding network time) for creating a key backup and performing a key recovery for 𝑛 = 7 parties
+where 𝑡 = 3. The key-owner requires 0.5 - 3.5 ms to create a key
+backup, depending on the selected elliptic curve and hash function.
+With 4 parallel threads, the key backup cost is reduced to 0.2 - 1.1
+ms. In the event of key loss, the key-owner can perform the key
+recovery operation in 0.2 - 1.0 ms using a single thread, or 0.1 - 0.5
+ms with 4 parallel threads.
+We also evaluate the end-to-end performance of our key recovery scheme by running the key-owner and each guardian on
+separate GCP instances in both LAN and WAN settings, with pointto-point communication channels between the key-owner and each
+guardian. Table 1 presents the total time for key backup and recovery for different choices of elliptic curves and hash functions. As
+expected, the time for both key backup and recovery operations
+scales linearly with the number of parties. For instance, using K256SHA256 in the LAN setting, as 𝑛 increases from 3 to 11, the key
+backup time rises linearly from 1.839 ms to 5.696 ms and the key
+recovery time increases linearly from 0.83 ms to 1.347 ms. Similarly, using P521-SHA512 in the WAN setting, the key backup
+time increases from 146.747 ms to 149.670 ms and the key recovery
+time increases from 146.625 ms to 148.371 ms as 𝑛 varies from 3
+
+to 11. This demonstrates the scalability of our protocol in both
+regional (LAN) and geo-distributed (WAN) settings.
+
+8
+
+EXTENSIONS
+
+In this section we discuss a number of extensions for our concrete
+construction (our generic SKR protocol Π, given in Figure 2 instantiated with our BUSS scheme from Section 5.1) that maybe useful
+in practice. We choose not to formalize this to keep the core ideas
+simple.
+Key Update. A natural question to consider is what happens
+when a guardian performs a key update. To accommodate that, we
+describe a simple mechanism to which can be easily incorporated
+into our existing protocol as follows:
+• Let us assume the old key of a guardian with identity-𝑗 is
+sk 𝑗 , and the updated key is sk′𝑗 . For each key-owner with
+identity-𝑖, guardian-𝑗 computes the difference in the share
+Δ𝑖,𝑗 := H(𝑖, sk 𝑗 ) − H(𝑖, sk′𝑗 ) and send that to owner-𝑖.
+• The owner implicitly defines the updated secret polynomial
+from the BUSS scheme 𝑓𝑖′ (𝑥) := 𝑓𝑖 (𝑥) + Δ𝑖,𝑗 𝐿 𝑗,𝐵 (𝑥). where
+𝐿 𝑗,𝐵 (𝑥) is the Lagrange polynomial corresponding to point
+𝑗 and set 𝐵.10
+• Update the public values, such as 𝑓𝑖′ (−1) = 𝑓𝑖 (−1)+Δ𝑖,𝑗 𝐿 𝑗,𝐵 (−1)
+and so on.
+10 Recall that, for each point 𝑗 ′ ∈ 𝐵 \ { 𝑗 } , 𝐿
+
+′
+𝑗,𝐵 ( 𝑗 ) = 0 and at point 𝑗 : 𝐿 𝑗,𝐵 ( 𝑗 ) = 1.
+
+Aniket Kate, Pratyay Mukherjee, Hamza Saleem, Pratik Sarkar, and Bhaskar Roberts
+
+EC-Hash
+
+K256-SHA256
+
+P256-SHA256
+
+P384-SHA384
+
+P521-SHA512
+
+n
+3
+5
+7
+9
+11
+3
+5
+7
+9
+11
+3
+5
+7
+9
+11
+3
+5
+7
+9
+11
+
+LAN
+Backup Recovery
+1.839
+0.830
+2.718
+0.879
+3.874
+0.928
+4.981
+1.284
+5.696
+1.347
+1.905
+0.805
+2.962
+0.893
+3.671
+0.978
+4.864
+1.133
+5.941
+1.220
+2.182
+1.158
+3.408
+1.164
+4.361
+1.182
+5.184
+1.367
+6.480
+1.454
+2.110
+1.165
+3.120
+1.230
+4.448
+1.377
+5.962
+1.440
+7.215
+1.525
+
+WAN
+Backup Recovery
+138.866 138.709
+142.550 142.476
+146.499 146.412
+146.581 146.381
+147.250 146.971
+142.959 142.848
+146.510 146.342
+146.897 146.634
+146.930 146.379
+147.369 146.844
+143.296 143.248
+147.041 146.685
+147.325 146.952
+147.930 147.175
+148.411 147.360
+146.747 146.625
+148.209 146.955
+148.560 147.477
+149.151 147.890
+149.670 148.371
+
+Table 1: End-to-end time in milliseconds for performing a
+key backup and recovery for 𝑛 = 2𝑡 + 1 (𝑛 − 1 guardians) in
+both LAN and WAN settings.
+
+Clearly, the new share of guardian-𝑗 is 𝑓𝑖′ ( 𝑗) = 𝑓𝑖 ( 𝑗) + Δ𝑖,𝑗 , and
+for all other guardians 𝑗 ′ ∈ 𝐵 \ {𝑖} we have 𝑓𝑖′ ( 𝑗 ′ ) = 𝑓𝑖 ( 𝑗 ′ ), that
+means the share remains unchanged. So, the procedure is completely oblivious to them, as they may not be even aware of the
+update, which takes place only between the guardian-𝑗 and the
+corresponding key-owner, who needs to update only the public
+values. Nevertheless, guardian-𝑗 must contact all key-owners he is
+supporting. Security wise, the key-owner knows Δ𝑖,𝑗 which is not
+a sensitive information.
+Risk of Exposure. A practical concern with our approach might be
+that, since each guardian needs to use their secret key for computing
+each share, that makes their own key exposed in the memory for
+a longer period. One simple way to mitigate this would be to use
+another key just for this purpose. While this requires additional
+storage, unlike our solution, still the requirement for total secret
+storage is constant and independent of the number of key-owners
+it supports. Note that, this will also eliminate the possibility of
+so-called "domino effect" discussed in Section 1.3.
+Cold wallets. While our solution is general and is also agnostic of
+whether a hot or cold wallet is being used, in practice it is easier to
+deploy in a hot wallet setting, where secret keys can directly used
+to compute the shares. Cold wallets, instead never expose the key
+to the memory, and instead just send out the computed signatures
+for authorizing transactions directly. For such settings, computing
+shares by hashing the secret keys would not work immediately, as
+cold wallets are programmed to compute specific functions (such
+as signatures). However, since most cold wallets (e.g. Ledger [15],
+Trezor [29] etc.) implement RFC6979 specs [21], which specifies
+
+deterministic signatures, we can make it work with our approach
+as follows:
+• The guardian-𝑗 generates a deterministic signature 𝜁𝑖,𝑗 on
+a specific message (Rec, 𝑖, 𝑗) o help backup/recover the key
+of owner 𝑖.
+• Then guardian-𝑗 participates in the SKR protocol (Fig. 2)
+using 𝜎𝑖,𝑗 := H(𝜁𝑖,𝑗 ), where H is a random oracle that maps
+signatures to field elements.
+It works because instead of the secret keys themselves it suffices
+to use the deterministic signatures output by the cold-wallet on
+the unique message. Each 𝜎𝑖,𝑗 is guaranteed to be random and
+unpredictable due to the unforgeability guarantees of the coldwallet. Nonetheless, we remark that if a cold wallet implements a
+randomized signature then this will not work, because the wallet
+would yield different 𝜁𝑖,𝑗 values during backup and recovery, which
+is undesirable. Further note that, this issue does not arise if the
+above two-key approach is used.
+
+9
+
+CONCLUSION
+
+We propose a simple and efficient protocol for socially backup and
+recover keys within a community where each party holds a secret
+key (and has a corresponding public key). Our solution uses a newly
+introduced technique, that we formalize here as bottom-up secret
+sharing, as the main underlying tool. Our design enables mutual
+key backups within the community - where each party can act as a
+backup guardian for multiple key owners, and no guardian needs
+to store anything extra other than its own secret key.
+We analyze our protocol in a formal framework, we put forward
+in this work. While our framework is general enough, it does not
+capture the so-called domino effect (Section 1.3). We leave formalizing that with a plausibly extended framework as an interesting
+future work.
+To the best of our knowledge, ours is the first effort to formalize
+social recovery protocols. Additionally the mutual key back-up setting within a community of key holders has never been considered
+earlier. Our protocol is very simple and also practically efficient, as
+demonstrated by our empirical results. The new concept of bottomup secret sharing may be of independent interest.
+
+REFERENCES
+[1] Aptos. 2024. Aptos Keyless. https://aptos.dev/en/build/guides/aptos-keyless.
+[2] Argent. 2025. How to Recover My Wallet with Guardians On-Chain (Complete Guide). https://support.argent.xyz/hc/en-us/articles/360007338877-Howto-recover-my-wallet-with-guardians-on-chain-complete-guide. Accessed:
+2025-01-09.
+[3] Leemon Baird, Sanjam Garg, Abhishek Jain, Pratyay Mukherjee, Rohit Sinha,
+Mingyuan Wang, and Yinuo Zhang. 2023. Threshold Signatures in the Multiverse.
+Cryptology ePrint Archive, Paper 2023/063. https://eprint.iacr.org/2023/063
+https://eprint.iacr.org/2023/063.
+[4] Mihir Bellare, Wei Dai, and Phillip Rogaway. 2020. Reimagining secret sharing:
+Creating a safer and more versatile primitive by adding authenticity, correcting
+errors, and reducing randomness requirements. Proceedings on Privacy Enhancing
+Technologies (2020).
+[5] BitGo. 2025. Wallet Recovery Guide. https://developers.bitgo.com/guides/wallets/
+recover. Accessed: 2025-01-09.
+[6] Sam Blackshear, Konstantinos Chalkias, Panagiotis Chatzigiannis, Riyaz Faizullabhoy, Irakliy Khaburzaniya, Eleftherios Kokoris-Kogias, Joshua Lind, David
+Wong, and Tim Zakian. 2021. Reactive Key-Loss Protection in Blockchains. In
+Financial Cryptography and Data Security. FC 2021 International Workshops CoDecFin, DeFi, VOTING, and WTSC, Virtual Event, March 5, 2021, Revised Selected
+Papers (Lecture Notes in Computer Science, Vol. 12676), Matthew Bernhard, Andrea
+
+ANARKey: A New Approach to (Socially) Recover Keys
+
+Bracciali, Lewis Gudgeon, Thomas Haines, Ariah Klages-Mundt, Shin’ichiro Matsuo, Daniel Perez, Massimiliano Sala, and Sam Werner (Eds.). Springer, 431–450.
+[7] Dan Boneh, Ben Lynn, and Hovav Shacham. 2001. Short Signatures from the
+Weil Pairing. 514–532. https://doi.org/10.1007/3-540-45682-1_30
+[8] Vitalik Buterin. 2021. Why we need wide adoption of social recovery wallets.
+https://vitalik.eth.limo/general/2021/01/11/recovery.html.
+[9] Ran Canetti. 2000. Security and Composition of Multiparty Cryptographic
+Protocols. 13, 1 (Jan. 2000), 143–202. https://doi.org/10.1007/s001459910006
+[10] Panagiotis Chatzigiannis, Konstantinos Chalkias, Aniket Kate, Easwar Vivek
+Mangipudi, Mohsen Minaei, and Mainack Mondal. 2023. SoK: Web3 Recovery
+Mechanisms. IACR Cryptol. ePrint Arch. (2023), 1575. https://eprint.iacr.org/
+2023/1575
+[11] Cypherock. 2025. Cypherock Documentation. https://docs.cypherock.com/.
+Accessed: 2025-01-09.
+[12] Poulami Das, Sebastian Faust, and Julian Loss. 2019. A Formal Treatment of
+Deterministic Wallets. 651–668. https://doi.org/10.1145/3319535.3354236
+[13] RustCrypto Developers. 2025. Elliptic Curves Implementation. https://github.
+com/RustCrypto/elliptic-curves. Accessed: 2025-01-09.
+[14] Dash Core Group. 2025. Dash: A Privacy-Centric Cryptocurrency. https://www.
+exodus.com/assets/docs/dash-whitepaper.pdf. Accessed: 2025-01-09.
+[15] Ledger. [n. d.]. Ledger: Hardware Wallet for Cryptocurrency Security. https:
+//www.ledger.com/. Accessed: 2025-01-08.
+[16] Yehuda Lindell. 2017. How to Simulate It - A Tutorial on the Simulation Proof
+Technique. In Tutorials on the Foundations of Cryptography, Yehuda Lindell (Ed.).
+Springer International Publishing, 277–346. https://doi.org/10.1007/978-3-31957048-8_6
+[17] Yehuda Lindell. 2023. Cryptography and MPC in Coinbase Wallet as a Service
+(WaaS). https://www.coinbase.com/blog/digital-asset-management-with-mpcwhitepaper
+[18] Ryan Little, Lucy Qin, and Mayank Varia. 2024. Secure Account Recovery for a
+Privacy-Preserving Web Service. In 33rd USENIX Security Symposium, USENIX
+Security 2024, Philadelphia, PA, USA, August 14-16, 2024, Davide Balzarotti and
+
+Wenyuan Xu (Eds.). USENIX Association. https://www.usenix.org/conference/
+usenixsecurity24/presentation/little
+[19] MetaMask. 2025. MetaMask Documentation. https://docs.metamask.io/. Accessed: 2025-01-09.
+[20] Allan B. Pedin, Nazli Siasi, and Mohammad Sameni. 2023. Smart ContractBased Social Recovery Wallet Management Scheme for Digital Assets. In Proceedings of the 2023 ACM Southeast Conference (Virtual Event, USA) (ACM
+SE ’23). Association for Computing Machinery, New York, NY, USA, 177–181.
+https://doi.org/10.1145/3564746.3587016
+[21] T. Pornin. 2013. RFC 6979: Deterministic Usage of the Digital Signature Algorithm
+(DSA) and Elliptic Curve Digital Signature Algorithm (ECDSA).
+[22] Sequence. 2025. Sequence Documentation. https://docs.sequence.xyz/. Accessed:
+2025-01-09.
+[23] Adi Shamir. 1979. How to share a secret. Commun. ACM 22, 11 (1979), 612–613.
+[24] Sui. 2023. zkLogin. https://docs.sui.io/concepts/cryptography/zklogin.
+[25] Jacob Swambo and Antoine Poinsot. 2021. Risk Framework for Bitcoin Custody
+Operation with the Revault Protocol. In Financial Cryptography and Data Security.
+FC 2021 International Workshops, Matthew Bernhard, Andrea Bracciali, Lewis
+Gudgeon, Thomas Haines, Ariah Klages-Mundt, Shin’ichiro Matsuo, Daniel
+Perez, Massimiliano Sala, and Sam Werner (Eds.). Springer Berlin Heidelberg,
+Berlin, Heidelberg, 3–20.
+[26] New York Times. [n. d.]. Tens of billions worth of Bitcoin have been locked by people who forgot their key. https://www.nytimes.com/2021/01/13/business/tensof-billions-worth-of-bitcoin-have-been-locked-by-people-who-forgot-theirkey.html.
+[27] Tokio. 2025. Tokio: An Async Runtime for Rust. https://tokio.rs/. Accessed:
+2025-01-09.
+[28] Torus. 2025. Torus Documentation. https://docs.tor.us/. Accessed: 2025-01-09.
+[29] Trezor. [n. d.]. Trezor: Hardware Wallet for Secure Cryptocurrency Storage.
+https://trezor.io/. Accessed: 2025-01-08.
+[30] Zengo. 2025. Zengo: The Crypto Wallet for Everyone. https://zengo.com/.
+Accessed: 2025-01-09.
+
+

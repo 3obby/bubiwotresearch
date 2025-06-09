@@ -1,0 +1,99 @@
+# BUBIWOT v3 System Architecture & Components
+
+This document details the concrete components required to build the BUBIWOT sovereign digital commons. The system is best understood as a self-hosting stack where the protocol's users govern its evolution. The key components include the BUBIWOT Appchain, a deeply integrated smart contract layer for governance, a multi-layered P2P client, and expanded validator services that host the protocol's own codebase.
+
+---
+
+### Component 1: The Core Blockchain (the BUBIWOT "Appchain")
+
+The sovereign, application-specific blockchain that serves as the ultimate settlement layer and source of truth for the entire ecosystem.
+
+*   **Technology**: Cosmos SDK, CometBFT, Ignite CLI. Secured by Bitcoin via the Babylon protocol.
+*   **Language**: Go.
+*   **Core Modules**:
+    *   Standard Cosmos Modules: `x/auth`, `x/bank`, `x/gov`.
+    *   `x/wasm`: The CosmWasm module, which hosts all core logic and governance.
+    *   Encrypted Mempool Module: A module to support threshold-encrypted transactions, mitigating validator front-running (MEV) and content-based censorship.
+    *   `x/ibc-go`: For communication with the Babylon chain.
+    *   Babylon Consumer Module: To inherit Bitcoin-grade security.
+*   **Purpose & Responsibilities**:
+    *   To provide a permanent, immutable ledger for accounts, balances, and identity attestations.
+    *   To serve as the execution environment for the governance, identity, and economic smart contracts.
+    *   To secure the state transitions that result from community governance votes (e.g., updating the on-chain client registry).
+    *   To expose endpoints (RPC, gRPC) for clients to interact with the chain's state and submit transactions.
+
+---
+
+### Component 2: The Smart Contract Layer (The On-Chain "Constitution")
+
+This is the logical core of the BUBIWOT commons, containing not just application logic but the rules for its own evolution.
+
+*   **Technology**: CosmWasm, with integrated zk-SNARK verifiers.
+*   **Language**: Rust.
+*   **Key Contracts / Modules**:
+    *   **Account Hub (`bubi-hub`)**: Manages user accounts, `is_human_verified` status, BUBI token balances, and reputation scores. It upholds the integrity of the `is_human_verified` flag, which is conferred when a user satisfies their own on-chain `AccountPolicy`. This user-defined policy dictates the requirements for attestors (e.g., minimum stake, reputation, or existing verified status), making the web of trust a flexible, user-sovereign system from its inception. The hub also includes a `developer_reputation_score` and can increase a user's general `reputation_score` for proactive security maintenance.
+    *   **Governance Module**: The heart of the decentralized organization.
+        *   **Proposal System**: Manages community proposals, including `CodeChange` proposals for the core software, `RegistryUpdate` proposals for infrastructure pointers, and `BugReport` proposals that trigger the bug bounty system.
+        *   **Stake-Gated Submissions**: Requires developers to post a `proposal_bond` in BUBI to submit a proposal, which can be slashed if the proposal is found to be malicious.
+        *   **ZK-Voting**: Implements a zk-SNARK verifier to allow verified humans to vote privately. The contract checks the proof and nullifier, tallying votes without ever linking them to a public key.
+    *   **On-Chain Registry (`resolver-contract`)**: An ENS-like contract that maps human-readable names to infrastructure endpoints (e.g., `client.bubi` -> `ipfs://Qm...`). To enhance censorship resistance, it supports multiple, redundant pointers for critical infrastructure. For example, a single name can resolve to an IPFS hash, an Arweave hash, and a Skynet hash, allowing the client to fetch assets from whichever network is available. Critically, only the Governance Module has the authority to update these records, making infrastructure changes subject to a community vote.
+    *   **Developer Economy & Treasury Module**:
+        *   **Staked Code Reviews**: Allows users to stake BUBI to attest to the quality and safety of a pending code proposal. Rewards and slashing are determined objectively based on the outcome of governance votes, especially in response to `BugReport` proposals.
+        *   **Bounty System**: Manages community-funded bounties for new features, automatically paying out to the developer whose approved `CodeChange` proposal fulfills the bounty.
+        *   **Fee Conversion & UBI Stability**: This module houses the protocol treasury, which programmatically converts BUBI-denominated network fees into Bitcoin for distribution to BUBI holders. It also enforces the dynamic UBI claim rate to ensure a stable emission schedule.
+
+---
+
+### Component 3: The In-Browser P2P Client (The Sovereign User Portal)
+
+The user-facing application, architected as a powerful three-layered light client that orchestrates interactions across different P2P networks for maximum security and efficiency. It is designed to provide a simple, sovereign user experience while managing significant cryptographic complexity under the hood.
+
+*   **Technology**: TypeScript, Next.js, CosmJS, js-libp2p, nostr-tools.
+*   **Language**: TypeScript / JavaScript.
+*   **Key Design Principles & Features**:
+    *   **Seamless Key Management**: The client abstracts away the complexity of managing multiple keys. For instance, it manages the user's primary account key and their dedicated "guardian key" as part of a single, unified session. This allows for advanced security features like cryptographic isolation for guardian duties without burdening the user.
+    *   **Hard-coded Bootstrapping & Quorum Verification**: To mitigate attacks on the very first connection, the client is distributed with a hard-coded list of public keys belonging to core community members or protocol founders. On first run, it fetches the `resolver-contract` address and the latest client hash from multiple Nostr relays signed by these keys. The client only proceeds if a quorum (e.g., 3 of 5) of these trusted sources agree on the correct addresses and hashes, preventing initial redirection attacks.
+    *   **Decentralized Entry Points**: To avoid reliance on censorable DNS, the client's entry points should be decentralized. The protocol can recommend using gateways for decentralized naming systems like ENS (e.g., `client.bubi.eth.limo`) or Handshake (HNS). The canonical IPFS hash for the client can also be distributed via high-follower Nostr accounts or other social channels as a final backstop.
+    *   **Privacy-Preserving RPC**: For users in sensitive environments, the client should support routing its RPC requests through privacy-preserving networks like a mixnet (e.g., Nym) or a dVPN. This obscures the user's IP address from the RPC provider, preventing IP-based blocking or surveillance.
+    *   **Guided Policy & Guardian Management**: The client features a full-page, mobile-friendly interface for managing guardians, ranked by relevant data to encourage mutual attestation. It provides wizard-driven tools that abstract granular policy parameters into intuitive "security levels," guiding users toward optimal settings.
+    *   **Proactive Security Nudges**: The client provides a clear "Recovery Health" score based on guardian liveness and reputation. It proactively nudges users to perform periodic guardian reviews and can offer intelligent suggestions for new guardians by analyzing the user's social graph, turning security maintenance into an engaging process.
+    *   **Policy Simulation & Visualization**: To empower users to make informed security decisions, the client will include tools to simulate and visualize the effects of their on-chain `AccountPolicy`. This could show them their current recovery resilience, suggest policy adjustments based on their social graph, and make the power of composable, user-defined trust rules accessible.
+*   **Client-side Architecture**:
+    *   **Layer 1: Appchain Service (CosmJS - "The Truth Layer")**: Manages all communication with the BUBIWOT Appchain. Its roles include: 1) Querying the `resolver-contract` to find the correct, community-approved RPC endpoints and IPFS hash for the client itself. 2) Submitting transactions for staking, claims, and most importantly, submitting the ZK-proofs for governance votes.
+    *   **Layer 2: Social Service (Nostr - "The Discovery Layer")**: Manages connections to Nostr relays for fast, ephemeral, and decentralized signaling. Its roles include: 1) Publishing and consuming social content. 2) Broadcasting and monitoring guardian liveness heartbeats. 3) Peer discovery for initiating private recovery sessions. To maximize censorship resistance, the client should connect to a diverse, user-configurable set of relays and consider LibP2P's pubsub as a fallback for discovery.
+    *   **Layer 3: Private Service (LibP2P - "The Secure Layer")**: Manages direct, secure, end-to-end encrypted browser-to-browser communication channels. Its primary role is to facilitate the exchange of sensitive data like BUSS recovery shares, which must never traverse a public network.
+*   **Key Services**:
+    *   **Threshold Signature Scheme (TSS) Service**: The validator set collectively controls a Bitcoin treasury wallet to manage rewards and fee distributions, acting on `BtcPayoutRequest` events from the smart contracts.
+    *   **Decentralized Code Hosting Service**: A new, critical responsibility. Validators run a client for a decentralized version control system (e.g., Radicle) to "pin" the canonical version of the BUBIWOT source code. They collectively ensure the availability of the codebase that governance has approved.
+    *   **Decentralized Storage Pinning Service**: Validators also provide pinning services for a content-addressed storage network (e.g., IPFS). This service is funded by user-paid fees attached to on-chain content pointers. When a user archives content, a small BUBI fee is escrowed and paid out over time to validators who prove they are storing the data, creating a sustainable market for long-term data persistence.
+    *   **Watchtower Service**: Independent, permissionless services that monitor on-chain data to detect and report censorship or other validator misbehavior. To incentivize their crucial role, watchtowers can submit evidence in a `SlashValidator` proposal. If the proposal passes, the watchtower receives a significant portion of the slashed validator's bond as a reward, creating a strong economic incentive for policing the network.
+    *   **On-Chain Treasury Auction Service**: Instead of relying on external oracles, the protocol uses a batch auction system to convert accumulated BUBI fees into BTC. The TSS service, operated by validators, plays a crucial role here. It manages a temporary BTC escrow for bidders and executes the final BTC transfers upon auction settlement. This service listens for on-chain auction events (`AuctionSettled`) to know which BTC transactions to sign, creating a fully self-contained economic loop without external price dependencies.
+    *   **Verifiable Build Service**: A **permissionless service run by a competitive network of staked "Builders"**. This service is responsible for pulling the latest approved commit hash, running a deterministic build, and submitting the resulting application hash to be validated by governance and recorded in the on-chain registry. Making this process open and competitive, rather than a mandatory validator duty, is critical for ensuring a trust-minimized and censorship-resistant software supply chain.
+
+---
+
+### Component 4: Off-Chain Services (Validator-Operated Infrastructure)
+
+Critical infrastructure run by the BUBIWOT appchain's validators, extending their role from just securing the chain to actively hosting the commons.
+
+*   **Technology**: Go or Rust services running alongside the validator node.
+*   **Key Services**:
+    *   **Threshold Signature Scheme (TSS) Service**: The validator set collectively controls a Bitcoin treasury wallet to manage rewards and fee distributions, acting on `BtcPayoutRequest` events from the smart contracts.
+    *   **Decentralized Code Hosting Service**: A new, critical responsibility. Validators run a client for a decentralized version control system (e.g., Radicle) to "pin" the canonical version of the BUBIWOT source code. They collectively ensure the availability of the codebase that governance has approved.
+    *   **Decentralized Storage Pinning Service**: Validators also provide pinning services for a content-addressed storage network (e.g., IPFS). This service is funded by user-paid fees attached to on-chain content pointers. When a user archives content, a small BUBI fee is escrowed and paid out over time to validators who prove they are storing the data, creating a sustainable market for long-term data persistence.
+    *   **Watchtower Service**: Independent, permissionless services that monitor on-chain data to detect and report censorship or other validator misbehavior. To incentivize their crucial role, watchtowers can submit evidence in a `SlashValidator` proposal. If the proposal passes, the watchtower receives a significant portion of the slashed validator's bond as a reward, creating a strong economic incentive for policing the network.
+    *   **On-Chain Treasury Auction Service**: Instead of relying on external oracles, the protocol uses a batch auction system to convert accumulated BUBI fees into BTC. The TSS service, operated by validators, plays a crucial role here. It manages a temporary BTC escrow for bidders and executes the final BTC transfers upon auction settlement. This service listens for on-chain auction events (`AuctionSettled`) to know which BTC transactions to sign, creating a fully self-contained economic loop without external price dependencies.
+    *   **Verifiable Build Service**: A **permissionless service run by a competitive network of staked "Builders"**. This service is responsible for pulling the latest approved commit hash, running a deterministic build, and submitting the resulting application hash to be validated by governance and recorded in the on-chain registry. Making this process open and competitive, rather than a mandatory validator duty, is critical for ensuring a trust-minimized and censorship-resistant software supply chain.
+
+---
+
+### How The Components Relate: A Code-to-Client Workflow
+
+This workflow illustrates how a code change is proposed and deployed in a fully trust-minimized way:
+
+1.  **Proposal**: A developer with a BUBIWOT account writes new code and pushes it to the P2P git network. They then call the `Governance Module` on-chain, posting a BUBI bond and creating a proposal to update the canonical code to their new commit hash.
+2.  **Review & Audit**: Other developers and security auditors review the code. They can use the `Developer Economy Module` to stake BUBI behind their review, signaling their approval or rejection and earning a reward if their assessment aligns with the final vote outcome.
+3.  **Vote**: The community of verified humans uses their **P2P Client** to cast private votes. The client generates a ZK-proof locally and submits it to the **Appchain**. The **Governance Module** verifies the proofs and tallies the votes.
+4.  **Execution & Hosting**: If the vote passes, the **Governance Module** emits an event. The **Decentralized Code Hosting Service** run by validators sees this event and updates their pinned repository to the new canonical commit hash.
+5.  **Build & Deployment**: A decentralized build network builds the new application. The hash of the built application is submitted in a new proposal to update the **On-Chain Registry**.
+6.  **Resolution & Loading**: When a user opens their **P2P Client**, it first queries the **On-Chain Registry** to get the latest community-approved IPFS hash, then loads the new application directly from its peers.
