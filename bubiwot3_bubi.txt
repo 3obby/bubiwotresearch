@@ -13,7 +13,7 @@ STATE.config: {
   auction_period_blocks: Uint, // How often auctions can be started
   ubi_claim_period_blocks: Uint, // The cooldown period for UBI claims
   ubi_claim_cap_per_period: Uint, // Max total UBI that can be claimed in a period
-  treasury_revenue_split: { // NEW: Governed policy for revenue allocation
+  treasury_revenue_split: { // Governed policy for revenue allocation
     to_staker_rewards: Decimal, // e.g., 0.80 (80%)
     to_swf: Decimal,            // e.g., 0.20 (20%)
   }
@@ -28,8 +28,10 @@ STATE.last_auction_start_block: Uint
 
 // -- Governance State --
 STATE.proposals: Map<ProposalId, Proposal>
+STATE.alliances: Map<String, Alliance> // Record of formal protocol alliances
 STATE.code_reviews: Map<ProposalId, List<CodeReview>> // Staked reviews for code proposals
 STATE.registered_watchtowers: Map<PublicKey, Watchtower> // Staked entities that can report validators
+STATE.capability_grants: Map<GrantId, CapabilityGrant> //  For personal OAuth flow
 
 // -- Infrastructure State --
 STATE.registry: Map<String, RegistryRecord> // On-chain DNS for client/RPC resolution
@@ -37,15 +39,18 @@ STATE.registry: Map<String, RegistryRecord> // On-chain DNS for client/RPC resol
 // -- Developer Economy State --
 STATE.bounties: Map<BountyId, Bounty>
 
-// -- Treasury Auction State --
+// -- Treasury, SWF & Oracle State --
 STATE.auctions: Map<AuctionId, TreasuryAuction>
 STATE.bids: Map<AuctionId, List<Bid>>
 STATE.treasury_assets: Map<String, Uint> // RENAMED: from cross_chain_vault. Holds all protocol-owned assets from fees and auctions. e.g., {"btc": 10e8, "usdc_on_eth": 5000e6}
-STATE.swf_assets: Map<String, Uint> // NEW: The Sovereign Wealth Fund's strategic assets.
-STATE.distributable_rewards: Map<String, Uint> // NEW: Pool of assets ready to be claimed by stakers.
-STATE.oracle_consumers: Map<ChainID, Map<Address, OracleConsumer>> // NEW: Whitelisted external contracts authorized to use the Human Oracle.
-STATE.external_links: Map<PublicKey, Map<ChainID, Address>> // NEW: Links BUBIWOT pubkeys to addresses on other chains.
-STATE.reverse_external_links: Map<ChainID, Map<Address, PublicKey>> // NEW: Efficient reverse lookup for the oracle.
+STATE.swf_assets: Map<String, Uint> //  The Sovereign Wealth Fund's strategic assets.
+STATE.distributable_rewards: Map<String, Uint> //  Pool of assets ready to be claimed by stakers.
+STATE.pending_successions: Map<PublicKey, SuccessionRequest> //  For account inheritance.
+STATE.used_vc_nullifiers: Map<Bytes, Bool> // Global nullifier set for Verifiable Credentials to prevent replay.
+STATE.oracle_consumers: Map<ChainID, Map<Address, OracleConsumer>> //  Whitelisted external contracts authorized to use the Human Oracle.
+STATE.attestation_registry: Map<PublicKey, Map<AttestationType, Attestation>> //  Stores attestations linked to a user's identity.
+STATE.external_links: Map<PublicKey, Map<ChainID, Address>> //  Links BUBIWOT pubkeys to addresses on other chains.
+STATE.reverse_external_links: Map<ChainID, Map<Address, PublicKey>> //  Efficient reverse lookup for the oracle.
 
 
 // -- Data Structures --
@@ -66,8 +71,7 @@ Account: {
   staked_btc_info: BtcStakeInfo,
   bubi_balance: Uint,
   bubi_staked: Uint,
-  reputation_score: Uint,
-  developer_reputation_score: Uint, // For code contributions
+  reputation_scores: Map<String, Uint>, // REPLACED: reputation_score, developer_reputation_score -> e.g., {"general": 10, "developer": 5, "guardian": 2}
   is_human_verified: Bool,
   humanity_proof_nullifier_set: Set<Bytes>, // Prevents replay of attestor credentials
   device_fingerprint_hash: Option<Bytes>, // For binding account to hardware
@@ -76,6 +80,8 @@ Account: {
   last_claim_block: Uint, // For UBI
   last_btc_reward_claim_block: Uint, // For BTC fee share
   policy: AccountPolicy,
+  succession_policy: Option<SuccessionPolicy>, // NEW
+  last_activity_block: Uint, //  Updated on any user-initiated transaction.
   guardian_pubkey_for_others: Option<PublicKey>,
   last_guardian_heartbeat_block: Uint, // For guardian proof-of-liveness
   btc_payout_address: Option<String>,
@@ -98,13 +104,51 @@ Proposal: {
 ProposalPayload: Enum {
   UpdateCodeCommit({ repo: String, commit_hash: String }),
   UpdateRegistryRecord({ name: String, targets: List<String> }),
+  RegisterApplication({ // EXPANDED for Sovereign App Store
+    name: String, 
+    description_hash: Bytes, 
+    targets: List<String>,
+    developer_payout_address: Address,
+    protocol_fee_permille: Uint, // e.g., 50 for 5%
+  }),
   CreateBounty({ title: String, description_hash: Bytes, amount: Uint, currency: String, bounty_id: BountyId }),
   SpendFromTreasury({ recipient: Address, amount: Uint, currency: String }), // To manage community funds
   SlashValidator({ validator_address: Address, evidence_hash: Bytes, reporter_pubkey: PublicKey }), // Reporter can be a watchtower
   ReportBug({ faulty_proposal_id: ProposalId, bug_description_hash: Bytes }), // For bug bounty payouts and slashing negligent reviewers
   AuthorizeOracleConsumer({ chain_id: ChainID, consumer_address: Address, fee_per_query: Uint, currency: String }), // NEW
-  UpdateTreasuryConfig({ new_split: TreasurySplit, new_params: ... }), // NEW: Adjust revenue allocation and other params.
-  ExecuteSWFStrategy({ strategy_hash: Bytes, transactions: List<GenericTxPayload> }), // NEW: Deploy capital from the SWF.
+  UpdateTreasuryConfig({ new_split: { to_staker_rewards: Decimal, to_swf: Decimal } }), //  Adjust revenue allocation.
+  ExecuteSWFStrategy({
+    strategy_id: String, // e.g., "ETH_YIELD_FARM_V1"
+    strategy_description_hash: Bytes,
+    transactions: List<GenericTxPayload> // A list of concrete, executable cross-chain transactions
+  }),  // Deploy capital from the SWF.
+  FormAlliance({ // RENAMED & EXPANDED: For forming deep, on-chain diplomatic and economic partnerships.
+    partner_protocol_id: String, // e.g., "Lido", "Uniswap"
+    terms_hash: Bytes, // Off-chain hash of the human-readable agreement
+    alliance_details: {
+      asset_swap: Option<{
+        bubi_to_send: Uint,
+        partner_asset_to_receive: String,
+        partner_asset_amount: Uint,
+      }>,
+      joint_liquidity: Option<{
+        pool_address: Address, // e.g., a Uniswap V3 pool
+        bubi_to_provide: Uint,
+        partner_asset_to_provide: Uint,
+      }>,
+      reciprocal_governance: Option<{
+        our_voting_commitment_hash: Bytes,
+        their_voting_commitment_hash: Bytes,
+      }>
+    }
+  }),
+  VoteInExternalDAO({ //  To direct the SWF's voting power in other protocols.
+    proposal_id_on_external_chain: String,
+    external_chain_id: ChainID,
+    governance_contract_address: Address,
+    vote_option: Bytes,
+    justification_hash: Bytes,
+  }),
   Text,
 }
 
@@ -119,6 +163,7 @@ CodeReview: {
 RegistryRecord: {
   owner_contract: Address, // e.g., The address of the Governance Module
   targets: List<String>, // e.g., ["ipfs://...", "arweave://..."]
+  btc_lock_tx_proof: Bytes, // Proof their BTC is locked in the TSS escrow
 }
 
 Bounty: {
@@ -156,17 +201,53 @@ Bid: {
   btc_lock_tx_proof: Bytes, // Proof their BTC is locked in the TSS escrow
 }
 
-OracleConsumer: { // NEW: Defines the terms for an authorized oracle user.
+OracleConsumer: { //  Defines the terms for an authorized oracle user.
   fee_per_query: Uint,
   currency: String, // The asset they pay in (e.g., "usdc_on_eth")
   is_active: Bool,
 }
 
-GenericTxPayload: { // NEW: Represents a transaction to be executed on an external chain by the protocol's TSS wallet.
+GenericTxPayload: { //  Represents a transaction to be executed on an external chain by the protocol's TSS wallet.
   target_chain: ChainID,
-  target_address: Address, // e.g., A Uniswap router
+  target_address: Address, // e.g., A Uniswap router or Aave lending pool
   value: Uint,
-  calldata: Bytes, // The encoded function call (e.g., for a swap)
+  calldata: Bytes, // The encoded function call (e.g., for a swap, deposit, or stake)
+}
+
+CapabilityGrant: { //  For personal OAuth and Data Vault access
+  grant_id: GrantId,
+  granter_pubkey: PublicKey, // The user granting permission
+  grantee_address: Address, // The dApp or service receiving permission
+  capability: Enum { // Make capabilities explicit
+      ExecuteAction({ hash: Bytes }), // For actions like posting
+      ReadDataVault({ path_hash: Bytes }), // Grant read access to a part of the data vault
+      WriteDataVault({ path_hash: Bytes }), // Grant write access
+  },
+  nonce: Uint,
+  expiry_block: Uint,
+  is_revoked: Bool,
+}
+
+SuccessionPolicy: { //  Defines the rules for account inheritance.
+  heirs: Set<PublicKey>,
+  threshold: Uint, // Number of heirs required to approve succession.
+  inactivity_period_blocks: Uint, // How long the account must be inactive to initiate.
+  succession_timelock_blocks: Uint, // Cooldown after initiation before succession can be finalized.
+}
+
+SuccessionRequest: { //  An active succession attempt.
+  initiated_by: PublicKey, // The heir who started the process.
+  new_owner_pubkey: PublicKey, // The new public key that will control the account.
+  confirmed_heirs: Set<PublicKey>,
+  initiation_block: Uint,
+}
+
+Alliance: { // Represents a formal, on-chain partnership with another protocol.
+  partner_protocol_id: String,
+  alliance_start_block: Uint,
+  terms_hash: Bytes,
+  status: Enum("ACTIVE", "DISSOLVED"),
+  reciprocal_agreements: List<String>, // e.g., ["JOINT_LIQUIDITY_UNISWAP_V3_BUBI_ETH", "GOV_NON_AGGRESSION_PACT"]
 }
 
 
@@ -230,6 +311,8 @@ FUNCTION register_account(owner_pubkey, btc_payout_address: Option<String>, btc_
   new_account = Account {
     // ...
     developer_reputation_score: 0,
+    succession_policy: None,
+    last_activity_block: current_block,
     // ...
   }
   STATE.accounts.set(owner_pubkey, new_account)
@@ -469,9 +552,9 @@ FUNCTION perform_guardian_review():
 
   // This function would likely have a cooldown period to prevent spamming.
   // For simplicity, we just increase the reputation score.
-  user_account.reputation_score += 1 // Small reward for good security hygiene
+  user_account.reputation_scores["guardian"] += 1 // Small reward for good security hygiene
   STATE.accounts.set(user_pubkey, user_account)
-  EMIT Event("GuardianSetReviewed", { owner: user_pubkey, new_reputation: user_account.reputation_score })
+  EMIT Event("GuardianSetReviewed", { owner: user_pubkey, new_reputation: user_account.reputation_scores["guardian"] })
 
 // Manages companion devices for session redundancy.
 FUNCTION add_companion_device(device_pubkey: PublicKey):
@@ -532,7 +615,7 @@ FUNCTION slash_inactive_guardian(guardian_to_slash_pubkey: PublicKey):
   
   // Apply penalty
   // For simplicity, we just reduce reputation. A real implementation could slash a bond.
-  guardian_account.reputation_score -= 10 // Penalty for unresponsiveness
+  guardian_account.reputation_scores["guardian"] -= 10 // Penalty for unresponsiveness
   
   STATE.accounts.set(user_pubkey, user_account)
   STATE.accounts.set(guardian_to_slash_pubkey, guardian_account)
@@ -563,10 +646,60 @@ FUNCTION _process_bug_report(faulty_proposal_id, bug_reporter_pubkey):
       })
 
 // =================================================================
+// Capability Grant Functions
+// =================================================================
+
+// Allows a user to grant a specific, time-limited capability to an external app.
+FUNCTION grant_capability(grantee_address: Address, capability: Enum, nonce: Uint, expiry_duration_blocks: Uint):
+  user_pubkey = sender
+  grant_id = generate_new_grant_id(user_pubkey, grantee_address, nonce)
+  ASSERT STATE.capability_grants.get(grant_id) is None, "Capability grant with this nonce already exists"
+
+  grant = CapabilityGrant {
+    grant_id: grant_id,
+    granter_pubkey: user_pubkey,
+    grantee_address: grantee_address,
+    capability: capability,
+    nonce: nonce,
+    expiry_block: current_block + expiry_duration_blocks,
+    is_revoked: False,
+  }
+  STATE.capability_grants.set(grant_id, grant)
+  EMIT Event("CapabilityGranted", { grant_id: grant_id, granter: user_pubkey, grantee: grantee_address })
+
+// Allows a user to revoke a capability before it expires.
+FUNCTION revoke_capability(grant_id: GrantId):
+  grant = STATE.capability_grants.get(grant_id)
+  ASSERT grant is not None, "Grant not found"
+  ASSERT grant.granter_pubkey == sender, "Only granter can revoke"
+  
+  grant.is_revoked = True
+  STATE.capability_grants.set(grant_id, grant)
+  EMIT Event("CapabilityRevoked", { grant_id: grant_id })
+
+// Allows a grantee (dApp) to execute a permissioned action.
+// This function would be called by other modules of the smart contract.
+FUNCTION _use_capability(grant_id: GrantId, capability_hash: Bytes):
+  // This is an internal helper, not a public-facing execute function.
+  // Example usage: The social media module would call this before posting.
+  grant = STATE.capability_grants.get(grant_id)
+  ASSERT grant is not None, "Grant not found"
+  ASSERT grant.grantee_address == sender, "Caller is not the grantee"
+  ASSERT grant.is_revoked == False, "Grant has been revoked"
+  ASSERT current_block < grant.expiry_block, "Grant has expired"
+  ASSERT grant.capability_hash == capability_hash, "Capability hash mismatch"
+
+  // If all checks pass, the calling function can proceed with the action.
+  // For one-time actions, the grant should be marked as used (or revoked).
+  grant.is_revoked = True // Effectively making it a one-time grant
+  STATE.capability_grants.set(grant_id, grant)
+
+
+// =================================================================
 // Human Oracle & External Integration Functions
 // =================================================================
 
-// NEW: Allows a user to link their verified BUBIWOT identity to an address on another chain.
+// Allows a user to link their verified BUBIWOT identity to an address on another chain.
 // The signature proves ownership of the external address.
 FUNCTION link_external_address(chain_id: ChainID, external_address: Address, signature: Bytes):
   // Pre-conditions
@@ -590,7 +723,7 @@ FUNCTION link_external_address(chain_id: ChainID, external_address: Address, sig
   
   EMIT Event("ExternalAddressLinked", { owner: user_pubkey, chain: chain_id, address: external_address })
 
-// NEW: PUBLIC query function for external dApps (via IBC/bridge) to check for humanity.
+// PUBLIC query function for external dApps (via IBC/bridge) to check for humanity.
 // The fee is collected by the relayer service before this query is called.
 QUERY is_human(chain_id: ChainID, external_address: Address, consumer_address: Address):
   // Access Control: Ensure the caller is an authorized oracle consumer.
@@ -605,12 +738,50 @@ QUERY is_human(chain_id: ChainID, external_address: Address, consumer_address: A
   account = STATE.accounts.get(pubkey)
   RETURN account.is_human_verified
 
+// Verifies a complex, user-generated ZK proof of attributes on behalf of an authorized consuming dApp.
+QUERY verify_identity_with_attributes( // RENAMED & EXPANDED: for composable identity
+  chain_id: ChainID,
+  consumer_address: Address,
+  user_external_address: Address,
+  zk_proof: Bytes,
+  public_inputs: {
+    claims_hash: Bytes, // Hash of the specific claims being proven, e.g., hash({rep_min: 500, has_credential: "UniversityDegree"})
+    vc_nullifiers: List<Bytes>, // Nullifiers for any Verifiable Credentials used in the proof
+  }
+):
+  // This is a high-value query that enables advanced use cases like reputation-based undercollateralized lending.
+  // 1. Access Control: Ensure the caller is an authorized and fee-paying oracle consumer.
+  consumer = STATE.oracle_consumers.get(chain_id)?.get(consumer_address)
+  ASSERT consumer is not None and consumer.is_active, "Not an authorized oracle consumer"
+  // Fee logic would be handled by the relayer before calling this query.
+
+  // 2. Find the user's BUBIWOT account from their external address for context.
+  user_pubkey = STATE.reverse_external_links.get(chain_id)?.get(user_external_address)
+  ASSERT user_pubkey is not None, "User has no linked BUBIWOT account"
+
+  // 3. Prevent replay of Verifiable Credentials used in the proof.
+  for nullifier in public_inputs.vc_nullifiers:
+    ASSERT STATE.used_vc_nullifiers.get(nullifier) is None, "Verifiable credential has already been used in a proof"
+    STATE.used_vc_nullifiers.set(nullifier, True)
+
+  // 4. Verify the ZK proof against the state root and the public inputs hash.
+  // The proof is generated client-side by the user. It proves that their account
+  // satisfies the claims without revealing any private data.
+  ASSERT ZkSnarkVerifier.verify(zk_proof, get_current_state_root(), public_inputs.claims_hash) is True, "ZK proof verification failed"
+
+  // 5. Return success. The dApp now has a high-integrity, privacy-preserving signal.
+  RETURN True
+
+// Advanced, ZK-based query for user attributes.
+// Allows an external dApp to request a user to generate a proof of a specific claim.
+// existing code...
+
 
 // =================================================================
 // Treasury Auction Functions
 // =================================================================
 
-// INTERNAL function called by the bridge service to credit foreign assets.
+// INTERNAL function called by the bridge/oracle service to credit foreign assets.
 // RENAMED and UPDATED: Now credits the main treasury from any source (e.g., oracle fees).
 FUNCTION _credit_treasury(asset_denom: String, amount: Uint, source_tx_hash: Bytes):
   // Access control: only a trusted relayer/bridge entity can call this.
@@ -753,7 +924,7 @@ FUNCTION settle_auction(auction_id):
   // Allocate all funds currently in the treasury
   _allocate_treasury_funds()
 
-// NEW: INTERNAL function to allocate all assets in the treasury to the SWF and staker rewards pool.
+// INTERNAL function to allocate all assets in the treasury to the SWF and staker rewards pool.
 FUNCTION _allocate_treasury_funds():
   split = STATE.config.treasury_revenue_split
   
@@ -776,3 +947,112 @@ FUNCTION _allocate_treasury_funds():
 
   // Clear the treasury now that it's been allocated
   STATE.treasury_assets = Map()
+
+// =================================================================
+// Account Succession & Inheritance Functions
+// =================================================================
+
+// Allows a user to define or update their succession policy.
+FUNCTION set_succession_policy(policy: SuccessionPolicy):
+  user_pubkey = sender
+  user_account = STATE.accounts.get(user_pubkey)
+  ASSERT user_account is not None, "Account not found"
+  ASSERT policy.threshold <= policy.heirs.len(), "Threshold cannot exceed number of heirs"
+
+  user_account.succession_policy = Some(policy)
+  user_account.last_activity_block = current_block
+  STATE.accounts.set(user_pubkey, user_account)
+  EMIT Event("SuccessionPolicySet", { owner: user_pubkey })
+
+// Called by a designated heir to begin the succession process for an inactive account.
+FUNCTION initiate_succession(target_account_pubkey: PublicKey, new_owner_pubkey: PublicKey):
+  initiator_pubkey = sender
+  target_account = STATE.accounts.get(target_account_pubkey)
+  ASSERT target_account is not None, "Target account not found"
+  ASSERT target_account.succession_policy is not None, "Target account has no succession policy"
+  
+  policy = target_account.succession_policy
+  ASSERT initiator_pubkey in policy.heirs, "Caller is not a designated heir"
+
+  // Check for inactivity
+  is_inactive = (current_block - target_account.last_activity_block) > policy.inactivity_period_blocks
+  ASSERT is_inactive, "Account is still active"
+
+  // Ensure no succession is already in progress
+  ASSERT STATE.pending_successions.get(target_account_pubkey) is None, "Succession already in progress"
+
+  request = SuccessionRequest {
+    initiated_by: initiator_pubkey,
+    new_owner_pubkey: new_owner_pubkey,
+    confirmed_heirs: {initiator_pubkey},
+    initiation_block: current_block,
+  }
+  STATE.pending_successions.set(target_account_pubkey, request)
+  EMIT Event("SuccessionInitiated", { target: target_account_pubkey, initiator: initiator_pubkey })
+
+// Called by other heirs to approve an active succession request.
+FUNCTION confirm_succession(target_account_pubkey: PublicKey):
+  confirmer_pubkey = sender
+  request = STATE.pending_successions.get(target_account_pubkey)
+  policy = STATE.accounts.get(target_account_pubkey).succession_policy
+  ASSERT request is not None, "No succession in progress for this account"
+  ASSERT confirmer_pubkey in policy.heirs, "Caller is not a designated heir"
+  
+  request.confirmed_heirs.add(confirmer_pubkey)
+  STATE.pending_successions.set(target_account_pubkey, request)
+  EMIT Event("SuccessionConfirmed", { target: target_account_pubkey, confirmer: confirmer_pubkey })
+
+// Called by the original owner to cancel a mistaken or malicious succession attempt.
+FUNCTION cancel_succession():
+  user_pubkey = sender
+  request = STATE.pending_successions.get(user_pubkey)
+  ASSERT request is not None, "No succession in progress for this account"
+
+  // This proves the original owner is active and in control.
+  STATE.pending_successions.remove(user_pubkey)
+  
+  account = STATE.accounts.get(user_pubkey)
+  account.last_activity_block = current_block // Update activity timestamp
+  STATE.accounts.set(user_pubkey, account)
+
+  EMIT Event("SuccessionCancelled", { owner: user_pubkey })
+
+// After conditions are met, anyone can call this to finalize the transfer of the account.
+FUNCTION finalize_succession(target_account_pubkey: PublicKey):
+  request = STATE.pending_successions.get(target_account_pubkey)
+  account = STATE.accounts.get(target_account_pubkey)
+  ASSERT request is not None, "No succession in progress"
+  
+  policy = account.succession_policy
+  ASSERT len(request.confirmed_heirs) >= policy.threshold, "Heir threshold not met"
+  
+  timelock_has_passed = (current_block - request.initiation_block) > policy.succession_timelock_blocks
+  ASSERT timelock_has_passed, "Succession timelock has not passed"
+
+  // All checks pass. Transfer ownership.
+  // We create a new account record for the new owner, copying the state,
+  // and then delete the old one.
+  new_owner_pubkey = request.new_owner_pubkey
+  ASSERT STATE.accounts.get(new_owner_pubkey) is None, "New owner pubkey already has an account"
+
+  // Copy state to new account, resetting security policies.
+  new_account = account
+  new_account.owner_pubkey = new_owner_pubkey
+  new_account.guardians = Set() // Heirs must set up their own security.
+  new_account.companion_devices = Set()
+  new_account.succession_policy = None // Must be re-established.
+  new_account.last_activity_block = current_block
+
+  STATE.accounts.set(new_owner_pubkey, new_account)
+  STATE.accounts.remove(target_account_pubkey)
+  STATE.pending_successions.remove(target_account_pubkey)
+
+  EMIT Event("SuccessionFinalized", { old_owner: target_account_pubkey, new_owner: new_owner_pubkey })
+
+  // Emit an event to trigger the transfer of linked external assets.
+  // The TSS Executor Service listens for this event and uses the `external_links`
+  // mapping to transfer assets on other chains to the heir's corresponding addresses.
+  EMIT Event("SuccessionAssetTransferTriggered", {
+      deceased_owner: target_account_pubkey,
+      heir_owner: new_owner_pubkey
+  })

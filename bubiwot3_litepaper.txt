@@ -1,4 +1,4 @@
-BUBIWOT Litepaper v0.4
+BUBIWOT Litepaper v0.7
 towards sovereign accounts, banking, and communication
 Robert F. Ussery III
 June 2025
@@ -8,8 +8,8 @@ and account recovery protocol built on the Babylon protocol, integrating a novel
 scheme using CosmWasm smart contracts to create a decentralized web of trust. The protocol establishes a
 sustainable economic model where token holders earn a share of protocol revenue in Bitcoin, and it powers
 a decentralized, censorship-resistant social platform. It functions as a foundational Humanity-as-a-Service
-layer for the entire decentralized web, enabling any application to verify human users and prevent Sybil attacks.
-The protocol leverages real-life peer-to-peer (IRL) attestations to securely establish and recover accounts,
+layer for the entire decentralized web, enabling any application to verify human users, prevent Sybil attacks,
+and laying the foundation for inheritable digital estates and a user-owned data economy. The protocol leverages real-life peer-to-peer (IRL) attestations to securely establish and recover accounts,
 proving humanity through strong-form identity, and economically incentivizing truthful participation. This paper
 provides a concise overview of the BUBIWOT architecture, its core functionalities, and the economic incentives
 that underpin its security model.
@@ -36,6 +36,7 @@ objectives:
 attestations.
 • Enable cryptographic, decentralized account re-
 covery.
+• Secure digital legacy through programmable, on-chain inheritance.
 • Distribute Universal Basic Income (UBI) tokens
 backed by staked Bitcoin.
 • Provide a yield-bearing native token (BUBI) that
@@ -238,6 +239,7 @@ process prevents drift between approved code and
 deployed applications, and it is secured by a net-
 work of bonded "builders" who are slashed for
 submitting fraudulent builds.
+• **The Sovereign Wealth Fund (SWF) as a Decentralized Central Bank and Chief Diplomat:** To ensure perpetual growth and long-term dominance, BUBIWOT does not simply distribute all its revenue. A governable portion is diverted to a protocol-owned Sovereign Wealth Fund (SWF). The SWF is not merely a treasury; it functions as the protocol's decentralized central bank and **chief diplomat**, actively managed by BUBI holders. Through `ExecuteSWFStrategy` governance proposals, the community can direct the protocol's TSS-controlled wallets to execute precise, cross-chain DeFi operations—such as providing liquidity on decentralized exchanges, staking assets in lending protocols, or making strategic investments. **Furthermore, governance can deploy SWF capital to execute trust-minimized token swaps with allied protocols, creating mutual skin-in-the-game, and can wield the voting power of its diverse assets in other DAOs, transforming BUBIWOT into an influential meta-governance player.** The yield generated from these activities is programmatically harvested and returned to the central treasury, creating a powerful compounding flywheel. This transforms the protocol from a passive recipient of fees into an active, capital-efficient engine for economic expansion, amplifying the value captured for all participants and creating a self-funding model for the UBI.
 
 6
 
@@ -247,8 +249,8 @@ The economic model is designed to align participant
 interests with the security and integrity of the network.
 • Users stake Bitcoin on the L1 blockchain via the
 Babylon protocol to participate.
-• **Productive BUBI Token:** Holding BUBI tokens entitles the user to claim a proportional share of the network's accumulated Bitcoin fees, making it a productive, yield-bearing asset. **The protocol captures value from three primary streams: 1) BTC yield from Babylon staking rewards, 2) BUBI-denominated network fees, and 3) direct B2B revenue from the protocol's on-chain Humanity Oracle. The first two streams of BUBI fees are converted into a distributable asset via a decentralized, on-chain batch auction system, periodically selling the accumulated fees for Bitcoin. The third stream consists of fees paid in foreign assets (e.g., ETH, USDC) by other protocols for oracle services. These foreign assets are added to the protocol treasury, enriching the value available to all BUBI holders.** This creates a robust, self-sufficient economic loop without relying on external price oracles or centralized exchanges.
-• **The Sovereign Wealth Fund (SWF):** To ensure perpetual growth and long-term dominance, BUBIWOT does not simply distribute all its revenue. A governable portion of all incoming revenue (from both auctions and oracle fees) is automatically diverted to a protocol-owned Sovereign Wealth Fund. This SWF is an on-chain, actively managed investment vehicle. Through governance, BUBI holders can vote to deploy SWF capital into strategic initiatives, such as providing protocol-owned liquidity on decentralized exchanges, investing in promising new technologies, or acquiring assets that generate further yield for the protocol. This transforms the treasury from a passive pot of funds into a powerful engine for economic expansion, creating a compounding value flywheel that benefits all participants.
+• **Productive BUBI Token:** Holding BUBI tokens entitles the user to claim a proportional share of the network's accumulated Bitcoin fees, making it a productive, yield-bearing asset. **The protocol captures value from three primary streams: 1) BTC yield from Babylon staking rewards, 2) BUBI-denominated network fees, and 3) direct B2B revenue from the protocol's on-chain Humanity Oracle. The oracle's revenue model is tiered: it provides simple `is_human` checks for a base fee, and high-value, privacy-preserving attestations of specific user attributes (e.g., "prove reputation > 500") via ZK-proofs for a premium fee.** The first two streams of BUBI fees are converted into a distributable asset via a decentralized, on-chain batch auction system, periodically selling the accumulated fees for Bitcoin. The third stream consists of fees paid in foreign assets (e.g., ETH, USDC) by other protocols for oracle services. These foreign assets are added to the protocol treasury, enriching the value available to all BUBI holders. This creates a robust, self-sufficient economic loop without relying on external price oracles or centralized exchanges.
+• **The Sovereign Wealth Fund (SWF):** To ensure perpetual growth and long-term dominance, BUBIWOT does not simply distribute all its revenue. A governable portion of all incoming revenue (from both auctions and oracle fees) is automatically diverted to a protocol-owned Sovereign Wealth Fund. This SWF is an on-chain, actively managed investment vehicle. Through governance, BUBI holders can vote to deploy SWF capital into strategic initiatives, such as providing protocol-owned liquidity on decentralized exchanges, investing in promising new technologies, or acquiring assets that generate further yield for the protocol. **This also includes forming strategic alliances through token swaps and participating in the governance of other protocols, making the BUBI token a vehicle for meta-governance influence.** This transforms the treasury from a passive pot of funds into a powerful engine for economic expansion, creating a compounding value flywheel that benefits all participants.
 • Guardian attestations are incentivized through
 rewards in both Bitcoin and the protocol's native
 token. **Beyond one-time attestation rewards, guardians are compensated for ongoing liveness and availability. Users can trigger periodic reward distributions to their active guardians, funded by a portion of network revenue, creating a durable incentive for maintaining a healthy and responsive recovery network.** Bitcoin rewards are distributed from a decentralized, protocol-owned vault controlled by the BUBIWOT validator set via a Threshold Signature Scheme (TSS).
@@ -386,20 +388,9 @@ decentralized technology:
 and receive BUBI tokens on the appchain. Cru-
 cially, holding BUBI tokens allows users to claim
 a proportional share of the network's BTC rev-
-enues, creating a sustainable yield. **The protocol programmatically captures its own BUBI-denominated transaction fees and auctions them for BTC through a transparent, on-chain market mechanism. It also captures B2B revenue from its Humanity Oracle service, accepting fees in foreign assets (e.g., from Ethereum or Solana) into its treasury. This collected revenue is then split according to a governance-defined policy: one portion is made available for BUBI holders to claim as yield, while the other is deposited into the protocol's Sovereign Wealth Fund to be strategically deployed for long-term growth.** The resulting BTC and other assets are then made available to BUBI holders, distributed via a trust-minimized TSS vault controlled by the appchain's validators.
-• **Decentralized Authentication (Human-Verified OAuth):** BUBIWOT can serve as a decentral-
-ized authentication layer for both Web2 and Web3 applications. External services can post on-chain,
-incentivized "attestation requests" which any user
-can fulfill by providing a cryptographic signa-
-ture. A Web2 service can prompt a user to sign
-a challenge message and offer a BUBI reward,
-which is held in escrow by the smart contract.
-Upon successful signature verification on-chain,
-the user receives the reward, and the Web2 ser-
-vice receives a verifiable proof of authentication.
-This creates a powerful, Sybil-resistant alterna-
-tive to traditional login systems, backed by real
-economic incentives.
+enues, creating a sustainable yield. **The protocol programmatically captures its own BUBI-denominated transaction fees and auctions them for BTC through a transparent, on-chain market mechanism. It also captures B2B revenue from its Humanity Oracle service—ranging from simple identity checks to complex, privacy-preserving attribute verifications—accepting fees in foreign assets (e.g., from Ethereum or Solana) into its treasury. This collected revenue is then split according to a governance-defined policy: one portion is made available for BUBI holders to claim as yield, while the other is deposited into the protocol's Sovereign Wealth Fund to be strategically deployed for long-term growth.** The resulting BTC and other assets are then made available to BUBI holders, distributed via a trust-minimized TSS vault controlled by the appchain's validators.
+• **Protocol Diplomacy and Meta-Governance:** The protocol leverages its Sovereign Wealth Fund as its chief diplomatic tool. Through on-chain governance, BUBI holders can vote to form durable, symbiotic alliances with other protocols, executing strategic asset swaps, joint liquidity provisions, and reciprocal governance pacts that are enforced by the BUBIWOT chain. This forges deep economic moats and turns potential competitors into vested partners. The SWF's holdings of other governance tokens also grant BUBIWOT a voice in external DAOs, allowing BUBI holders to influence the broader Web3 ecosystem and steer it in directions that create value for the protocol.
+• **Decentralized Authentication (Human-Verified OAuth & Session Delegation):** BUBIWOT serves as a universal, decentralized authentication layer. Beyond simple login, it enables a "personal OAuth" system where users can grant specific, revocable, and often time-limited capabilities to third-party applications. For example, a user could grant a Web2 service permission to post on their behalf to the BUBIWOT social platform. The external service requests a `CapabilityGrant`, the user approves it in their BUBIWOT client, and the service receives a cryptographic authorization to perform a specific action without ever controlling the user's keys. This creates a powerful, Sybil-resistant, and user-centric alternative to traditional login and API key systems, all backed by real economic incentives.
 • **Decentralized Social Platform:** The protocol
 powers a censorship-resistant social media ecosys-
 tem. Users publish content (e.g., posts, replies)
@@ -426,12 +417,13 @@ tablish cryptographic proof-of-personhood through
 IRL attestations. This strong-form identity sup-
 ports decentralized access control, reputation build-
 ing, and social recovery, enhancing digital sovereignty.
-• **Self-Sustaining Developer Economy:** BUBIWOT fosters a vibrant ecosystem for its own
-evolution. Any user can create a BUBI-
+• **Inheritable Digital Estates:** BUBIWOT directly addresses the critical, unsolved problem of digital asset inheritance. The protocol provides tools for users to create a programmable "smart will," designating heirs and defining specific, on-chain conditions for asset succession. This transforms a BUBIWOT account into a durable digital legacy, creating the ultimate user lock-in and making the platform a prime venue for long-term, intergenerational value storage.
+• **Sovereign Developer & App Ecosystem:** BUBIWOT fosters a vibrant ecosystem for its own
+evolution and for trusted third-party applications. Any user can create a BUBI-
 denominated bounty to fund new features
 or bug fixes. Developers can then claim
 these bounties via governance-approved code
-proposals. To secure this process, the sys-
+proposals. **This same trust-minimized pipeline is used to power a "Sovereign App Store," where third-party apps can be submitted for community review and, upon passing a vote, are listed in an on-chain registry. Users can then interact with these apps through the BUBIWOT client, confident they are using legitimate, community-vetted software.** To secure this process, the sys-
 tem includes staked code reviews and an
 integrated bug bounty program. Review-
 ers who approve code are rewarded but
@@ -449,10 +441,10 @@ can attach micropayments (in BUBI) to mes-
 sages or actions to incentivize others' attention,
 fostering a vibrant, responsive, and economically
 sustainable social graph.
-• **Humanity-as-a-Service: The B2B Oracle:** BUBIWOT's most powerful feature is its ability to serve as a decentralized, cross-chain oracle for Proof-of-Humanity. Any external dApp, DAO, or protocol can integrate with BUBIWOT to verify that their users are unique human beings, effectively outsourcing Sybil resistance.
-    *   **Mechanism**: A dApp on another chain (e.g., Ethereum) can send a query to the BUBIWOT smart contracts via a bridge. This query asks, "Is address `0x123...` controlled by a verified human?"
-    *   **Revenue Generation**: The querying dApp pays a small fee (e.g., in USDC) to the BUBIWOT treasury for this service. The BUBIWOT contract then provides a definitive `true` or `false` answer.
-    *   **Use Cases**: This enables fair airdrops, one-person-one-vote DAO governance, Sybil-resistant NFT mints, and countless other applications across all of Web3, creating a constant and growing revenue stream for the BUBIWOT protocol. This transforms BUBIWOT into a fundamental piece of infrastructure for the entire crypto economy.
+• **Humanity-as-a-Service: The B2B Oracle & Personhood Marketplace:** BUBIWOT's most powerful feature is its ability to serve as a decentralized, cross-chain oracle for Proof-of-Humanity. Any external dApp, DAO, or protocol can integrate with BUBIWOT to verify that their users are unique human beings, effectively outsourcing Sybil resistance.
+    *   **Mechanism**: A dApp on another chain (e.g., Ethereum) can send a query to the BUBIWOT smart contracts via a bridge. This query can be a simple check ("Is address `0x123...` controlled by a verified human?") or **a complex, privacy-preserving request ("Can the owner of `0x123...` generate a ZK-proof that they are a verified human with a reputation score over 500 and possess a specific Verifiable Credential?").** The user generates the required proof client-side, preserving their privacy, and the BUBIWOT oracle provides a definitive verification to the dApp.
+    *   **Revenue Generation**: The querying dApp pays a fee (e.g., in USDC) to the BUBIWOT treasury for this service, **with premium fees for more complex, high-value ZK-based queries.** The BUBIWOT contract then provides a definitive `true` or `false` answer.
+    *   **Use Cases**: This enables fair airdrops, one-person-one-vote DAO governance, and Sybil-resistant NFT mints. It unlocks advanced applications like undercollateralized lending based on reputation and powers a new, user-owned data economy. Verified humans can securely pool their private data to train AI models, earning revenue in a privacy-preserving way. BUBIWOT's Sybil resistance guarantees high-quality, human-generated datasets, making it the foundational coordination and payment layer for this new economic paradigm. This creates a constant, growing revenue stream and transforms BUBIWOT into an indispensable piece of infrastructure for the entire digital economy.
 
 9
 
