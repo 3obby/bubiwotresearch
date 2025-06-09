@@ -36,6 +36,7 @@ STATE.bounties: Map<BountyId, Bounty>
 // -- Treasury Auction State --
 STATE.auctions: Map<AuctionId, TreasuryAuction>
 STATE.bids: Map<AuctionId, List<Bid>>
+STATE.cross_chain_vault: Map<String, Uint> // e.g., {"eth": 10e18, "usdc": 5000e6}
 
 
 // -- Data Structures --
@@ -60,11 +61,14 @@ Account: {
   developer_reputation_score: Uint, // For code contributions
   is_human_verified: Bool,
   humanity_proof_nullifier_set: Set<Bytes>, // Prevents replay of attestor credentials
+  device_fingerprint_hash: Option<Bytes>, // For binding account to hardware
+  companion_devices: Set<PublicKey>, // For session redundancy
   public_recovery_data: Option<Bytes>,
   last_claim_block: Uint, // For UBI
   last_btc_reward_claim_block: Uint, // For BTC fee share
   policy: AccountPolicy,
   guardian_pubkey_for_others: Option<PublicKey>,
+  last_guardian_heartbeat_block: Uint, // For guardian proof-of-liveness
   btc_payout_address: Option<String>,
 }
 
@@ -149,7 +153,7 @@ Bid: {
 
 // Allows a user to become verified by providing a ZK-proof that they have
 // received attestations from peers who satisfy the user's on-chain policy.
-FUNCTION claim_humanity_with_proof(zk_proof: Bytes):
+FUNCTION claim_humanity_with_proof(zk_proof: Bytes, device_fingerprint_hash: Bytes):
   // Pre-conditions
   user_pubkey = sender
   user_account = STATE.accounts.get(user_pubkey)
@@ -170,13 +174,14 @@ FUNCTION claim_humanity_with_proof(zk_proof: Bytes):
   // Prevent replay attacks by ensuring attestor credentials can only be used once per user claim.
   for nullifier in public_inputs.attestor_nullifiers:
     ASSERT nullifier is not in user_account.humanity_proof_nullifier_set
-    user_account.humanity_proof_nullifier_set.add(nullifier)
+    user_account.humanity_proof_nullifiers.add(nullifier)
 
-  // Grant verified status
+  // Grant verified status and bind to device
   user_account.is_human_verified = True
+  user_account.device_fingerprint_hash = Some(device_fingerprint_hash)
   
   STATE.accounts.set(user_pubkey, user_account)
-  EMIT Event("HumanityVerified", { owner: user_pubkey })
+  EMIT Event("HumanityVerified", { owner: user_pubkey, device_hash: device_fingerprint_hash })
 
 
 FUNCTION update_guardian_key(new_guardian_pubkey: PublicKey):
@@ -442,6 +447,72 @@ FUNCTION perform_guardian_review():
   STATE.accounts.set(user_pubkey, user_account)
   EMIT Event("GuardianSetReviewed", { owner: user_pubkey, new_reputation: user_account.reputation_score })
 
+// Manages companion devices for session redundancy.
+FUNCTION add_companion_device(device_pubkey: PublicKey):
+  // Pre-conditions
+  user_pubkey = sender
+  user_account = STATE.accounts.get(user_pubkey)
+  ASSERT user_account is not None, "Account not found"
+  // Optional: Could have a limit on number of devices
+
+  user_account.companion_devices.add(device_pubkey)
+  STATE.accounts.set(user_pubkey, user_account)
+  EMIT Event("CompanionDeviceAdded", { owner: user_pubkey, device: device_pubkey })
+
+FUNCTION remove_companion_device(device_pubkey: PublicKey):
+  // Pre-conditions
+  user_pubkey = sender
+  user_account = STATE.accounts.get(user_pubkey)
+  ASSERT user_account is not None, "Account not found"
+
+  user_account.companion_devices.remove(device_pubkey)
+  STATE.accounts.set(user_pubkey, user_account)
+  EMIT Event("CompanionDeviceRemoved", { owner: user_pubkey, device: device_pubkey })
+
+// Called by a guardian to prove they are online and active.
+FUNCTION guardian_heartbeat():
+  // Pre-conditions
+  guardian_pubkey = sender // This is the user's main key
+  guardian_account = STATE.accounts.get(guardian_pubkey)
+  ASSERT guardian_account is not None, "Account not found"
+  // A user must have opted-in to be a guardian for others by setting a guardian key.
+  ASSERT guardian_account.guardian_pubkey_for_others is not None, "User is not an active guardian"
+  // Optional: Add a cooldown to prevent spam
+
+  guardian_account.last_guardian_heartbeat_block = current_block
+  // Optional: Distribute a small liveness reward
+  STATE.accounts.set(guardian_pubkey, guardian_account)
+  EMIT Event("GuardianHeartbeat", { guardian: guardian_pubkey, block: current_block })
+
+// Allows a user to remove a guardian who has been inactive for too long.
+// This is different from a regular replacement as it might incur a penalty.
+FUNCTION slash_inactive_guardian(guardian_to_slash_pubkey: PublicKey):
+  user_pubkey = sender
+  user_account = STATE.accounts.get(user_pubkey)
+  ASSERT user_account is not None
+  ASSERT guardian_to_slash_pubkey in user_account.guardians, "Not a guardian for this user"
+
+  guardian_account = STATE.accounts.get(guardian_to_slash_pubkey)
+  ASSERT guardian_account is not None
+
+  // Define inactivity threshold (e.g., 1 million blocks)
+  INACTIVITY_THRESHOLD_BLOCKS = 1_000_000 
+  is_inactive = (current_block - guardian_account.last_guardian_heartbeat_block) > INACTIVITY_THRESHOLD_BLOCKS
+  
+  ASSERT is_inactive, "Guardian is not inactive"
+
+  // Remove from user's guardian set
+  user_account.guardians.remove(guardian_to_slash_pubkey)
+  
+  // Apply penalty
+  // For simplicity, we just reduce reputation. A real implementation could slash a bond.
+  guardian_account.reputation_score -= 10 // Penalty for unresponsiveness
+  
+  STATE.accounts.set(user_pubkey, user_account)
+  STATE.accounts.set(guardian_to_slash_pubkey, guardian_account)
+  
+  EMIT Event("GuardianSlashedForInactivity", { owner: user_pubkey, slashed_guardian: guardian_to_slash_pubkey })
+
 // INTERNAL function to process a successful bug report proposal.
 FUNCTION _process_bug_report(faulty_proposal_id, bug_reporter_pubkey):
   // Reward the bug reporter
@@ -468,6 +539,18 @@ FUNCTION _process_bug_report(faulty_proposal_id, bug_reporter_pubkey):
 // =================================================================
 // Treasury Auction Functions
 // =================================================================
+
+// INTERNAL function called by the bridge service to credit foreign assets.
+// Assumes validator set has confirmed the deposit on the source chain via TSS.
+FUNCTION _credit_cross_chain_vault(asset_denom: String, amount: Uint, source_tx_hash: Bytes):
+  // Access control: only a trusted relayer/bridge entity can call this.
+  // A more robust implementation would use IBC or a light client verifier.
+  ASSERT is_caller_bridge_relayer(sender)
+
+  current_balance = STATE.cross_chain_vault.get(asset_denom) or 0
+  STATE.cross_chain_vault.set(asset_denom, current_balance + amount)
+  EMIT Event("CrossChainVaultCredited", { asset: asset_denom, amount: amount, source_tx: source_tx_hash })
+
 
 // Anyone can kick off a new auction if the auction period has passed.
 FUNCTION start_auction():
@@ -524,53 +607,66 @@ FUNCTION settle_auction(auction_id):
   // Sort bids from highest price to lowest
   sorted_bids = bids.sort(by="max_price_btc_per_bubi", order="desc")
   
-  bubi_to_fill = auction.bubi_amount
+  bubi_to_sell = auction.bubi_amount
   clearing_price = 0
   total_btc_proceeds = 0
   
+  // Step 1: Find the clearing price. This is the price of the last bid that can be
+  // at least partially filled to sell all the BUBI.
+  bubi_demand_so_far = 0
   winning_bids = []
+  losing_bids = []
 
   for bid in sorted_bids:
-    if bubi_to_fill == 0:
-      // All BUBI has been allocated, remaining are losing bids
-      EMIT Event("BidLost", { auction_id: auction_id, bidder: bid.bidder_pubkey }) // Signals TSS to refund BTC
-      continue
-
-    // This is the clearing price: the price of the last bid that gets filled (even partially)
-    clearing_price = bid.max_price_btc_per_bubi
-    
-    // How much BUBI can this bid buy at its max price?
-    bubi_can_buy = bid.total_btc_to_spend / bid.max_price_btc_per_bubi
-    
-    if bubi_can_buy <= bubi_to_fill:
-      // Full bid is accepted
-      winning_bids.append({bidder: bid.bidder_pubkey, bubi_bought: bubi_can_buy, btc_paid: bid.total_btc_to_spend})
-      bubi_to_fill -= bubi_can_buy
+    if bubi_demand_so_far < bubi_to_sell:
+      clearing_price = bid.max_price_btc_per_bubi
+      // We calculate demand at this bid's price just to see if the auction clears.
+      bubi_demanded_at_this_price = bid.total_btc_to_spend / bid.max_price_btc_per_bubi
+      bubi_demand_so_far += bubi_demanded_at_this_price
+      winning_bids.append(bid)
     else:
-      // Partial bid is accepted, filling the rest of the auction
-      bubi_bought = bubi_to_fill
-      btc_paid = bubi_bought * clearing_price // Pay only for what was received at the clearing price
-      winning_bids.append({bidder: bid.bidder_pubkey, bubi_bought: bubi_bought, btc_paid: btc_paid})
-      bubi_to_fill = 0
+      losing_bids.append(bid)
   
-  // Now, recalculate what everyone pays based on the single clearing price
-  for win in winning_bids:
-      actual_btc_to_pay = win.bubi_bought * clearing_price
+  // If auction failed to clear (not enough demand), handle it.
+  ASSERT bubi_demand_so_far >= bubi_to_sell, "Auction failed to clear due to insufficient demand"
+
+  // Step 2: Settle all winning bids at the single clearing price.
+  bubi_left_to_distribute = bubi_to_sell
+  for bid in winning_bids:
+      // At the uniform clearing price, how much BUBI can the bidder's locked BTC buy?
+      bubi_can_afford = bid.total_btc_to_spend / clearing_price
+      
+      bubi_to_award = 0
+      if bubi_can_afford < bubi_left_to_distribute:
+        // Bidder gets all the BUBI they can afford at the clearing price.
+        bubi_to_award = bubi_can_afford
+      else:
+        // This bidder is the last (or only) one, getting a full or partial fill of what's left.
+        bubi_to_award = bubi_left_to_distribute
+      
+      if bubi_to_award <= 0: continue
+
+      actual_btc_to_pay = bubi_to_award * clearing_price
       total_btc_proceeds += actual_btc_to_pay
+      bubi_left_to_distribute -= bubi_to_award
       
       // Send BUBI to the winner
-      winner_account = STATE.accounts.get(win.bidder)
-      winner_account.bubi_balance += win.bubi_bought
-      STATE.accounts.set(win.bidder, winner_account)
+      winner_account = STATE.accounts.get(bid.bidder_pubkey)
+      winner_account.bubi_balance += bubi_to_award
+      STATE.accounts.set(bid.bidder_pubkey, winner_account)
       
       // Emit event for the TSS service to handle BTC movement
       EMIT Event("BidWon", {
           auction_id: auction_id,
-          bidder: win.bidder,
+          bidder: bid.bidder_pubkey,
           btc_to_protocol: actual_btc_to_pay,
-          // If refund is needed (bidder paid less than their total locked BTC)
-          btc_to_refund: win.btc_paid - actual_btc_to_pay
+          // The refund is the difference between what they locked and what they paid.
+          btc_to_refund: bid.total_btc_to_spend - actual_btc_to_pay
       })
+
+  // Signal TSS to refund all losing bids
+  for bid in losing_bids:
+      EMIT Event("BidLost", { auction_id: auction_id, bidder: bid.bidder_pubkey })
 
   // Update auction state
   auction.status = "SETTLED"
