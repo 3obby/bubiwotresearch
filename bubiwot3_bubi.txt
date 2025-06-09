@@ -13,6 +13,10 @@ STATE.config: {
   auction_period_blocks: Uint, // How often auctions can be started
   ubi_claim_period_blocks: Uint, // The cooldown period for UBI claims
   ubi_claim_cap_per_period: Uint, // Max total UBI that can be claimed in a period
+  treasury_revenue_split: { // NEW: Governed policy for revenue allocation
+    to_staker_rewards: Decimal, // e.g., 0.80 (80%)
+    to_swf: Decimal,            // e.g., 0.20 (20%)
+  }
 }
 
 // -- Core State --
@@ -36,7 +40,12 @@ STATE.bounties: Map<BountyId, Bounty>
 // -- Treasury Auction State --
 STATE.auctions: Map<AuctionId, TreasuryAuction>
 STATE.bids: Map<AuctionId, List<Bid>>
-STATE.cross_chain_vault: Map<String, Uint> // e.g., {"eth": 10e18, "usdc": 5000e6}
+STATE.treasury_assets: Map<String, Uint> // RENAMED: from cross_chain_vault. Holds all protocol-owned assets from fees and auctions. e.g., {"btc": 10e8, "usdc_on_eth": 5000e6}
+STATE.swf_assets: Map<String, Uint> // NEW: The Sovereign Wealth Fund's strategic assets.
+STATE.distributable_rewards: Map<String, Uint> // NEW: Pool of assets ready to be claimed by stakers.
+STATE.oracle_consumers: Map<ChainID, Map<Address, OracleConsumer>> // NEW: Whitelisted external contracts authorized to use the Human Oracle.
+STATE.external_links: Map<PublicKey, Map<ChainID, Address>> // NEW: Links BUBIWOT pubkeys to addresses on other chains.
+STATE.reverse_external_links: Map<ChainID, Map<Address, PublicKey>> // NEW: Efficient reverse lookup for the oracle.
 
 
 // -- Data Structures --
@@ -93,6 +102,9 @@ ProposalPayload: Enum {
   SpendFromTreasury({ recipient: Address, amount: Uint, currency: String }), // To manage community funds
   SlashValidator({ validator_address: Address, evidence_hash: Bytes, reporter_pubkey: PublicKey }), // Reporter can be a watchtower
   ReportBug({ faulty_proposal_id: ProposalId, bug_description_hash: Bytes }), // For bug bounty payouts and slashing negligent reviewers
+  AuthorizeOracleConsumer({ chain_id: ChainID, consumer_address: Address, fee_per_query: Uint, currency: String }), // NEW
+  UpdateTreasuryConfig({ new_split: TreasurySplit, new_params: ... }), // NEW: Adjust revenue allocation and other params.
+  ExecuteSWFStrategy({ strategy_hash: Bytes, transactions: List<GenericTxPayload> }), // NEW: Deploy capital from the SWF.
   Text,
 }
 
@@ -101,6 +113,7 @@ CodeReview: {
   review_stake: Uint,
   approved: Bool,
   comment_hash: Option<Bytes>,
+  total_btc_proceeds: Option<Uint>,
 }
 
 RegistryRecord: {
@@ -141,6 +154,19 @@ Bid: {
   max_price_btc_per_bubi: Decimal,
   total_btc_to_spend: Uint,
   btc_lock_tx_proof: Bytes, // Proof their BTC is locked in the TSS escrow
+}
+
+OracleConsumer: { // NEW: Defines the terms for an authorized oracle user.
+  fee_per_query: Uint,
+  currency: String, // The asset they pay in (e.g., "usdc_on_eth")
+  is_active: Bool,
+}
+
+GenericTxPayload: { // NEW: Represents a transaction to be executed on an external chain by the protocol's TSS wallet.
+  target_chain: ChainID,
+  target_address: Address, // e.g., A Uniswap router
+  value: Uint,
+  calldata: Bytes, // The encoded function call (e.g., for a swap)
 }
 
 
@@ -537,19 +563,62 @@ FUNCTION _process_bug_report(faulty_proposal_id, bug_reporter_pubkey):
       })
 
 // =================================================================
+// Human Oracle & External Integration Functions
+// =================================================================
+
+// NEW: Allows a user to link their verified BUBIWOT identity to an address on another chain.
+// The signature proves ownership of the external address.
+FUNCTION link_external_address(chain_id: ChainID, external_address: Address, signature: Bytes):
+  // Pre-conditions
+  user_pubkey = sender
+  user_account = STATE.accounts.get(user_pubkey)
+  ASSERT user_account is not None and user_account.is_human_verified, "User must be a verified human to link an address"
+  
+  // Verify that the sender actually owns the external address.
+  // This would involve a chain-specific signature verification (e.g., EIP-712).
+  ASSERT verify_external_signature(chain_id, external_address, user_pubkey, signature) is True
+  
+  // Store the primary link
+  user_links = STATE.external_links.get(user_pubkey) or Map()
+  user_links.set(chain_id, external_address)
+  STATE.external_links.set(user_pubkey, user_links)
+
+  // Store the reverse link for efficient queries
+  chain_links = STATE.reverse_external_links.get(chain_id) or Map()
+  chain_links.set(external_address, user_pubkey)
+  STATE.reverse_external_links.set(chain_id, chain_links)
+  
+  EMIT Event("ExternalAddressLinked", { owner: user_pubkey, chain: chain_id, address: external_address })
+
+// NEW: PUBLIC query function for external dApps (via IBC/bridge) to check for humanity.
+// The fee is collected by the relayer service before this query is called.
+QUERY is_human(chain_id: ChainID, external_address: Address, consumer_address: Address):
+  // Access Control: Ensure the caller is an authorized oracle consumer.
+  consumer = STATE.oracle_consumers.get(chain_id)?.get(consumer_address)
+  ASSERT consumer is not None and consumer.is_active, "Not an authorized oracle consumer"
+  
+  // Perform the efficient lookup
+  pubkey = STATE.reverse_external_links.get(chain_id)?.get(external_address)
+  if pubkey is None:
+    RETURN False
+    
+  account = STATE.accounts.get(pubkey)
+  RETURN account.is_human_verified
+
+
+// =================================================================
 // Treasury Auction Functions
 // =================================================================
 
 // INTERNAL function called by the bridge service to credit foreign assets.
-// Assumes validator set has confirmed the deposit on the source chain via TSS.
-FUNCTION _credit_cross_chain_vault(asset_denom: String, amount: Uint, source_tx_hash: Bytes):
+// RENAMED and UPDATED: Now credits the main treasury from any source (e.g., oracle fees).
+FUNCTION _credit_treasury(asset_denom: String, amount: Uint, source_tx_hash: Bytes):
   // Access control: only a trusted relayer/bridge entity can call this.
-  // A more robust implementation would use IBC or a light client verifier.
   ASSERT is_caller_bridge_relayer(sender)
 
-  current_balance = STATE.cross_chain_vault.get(asset_denom) or 0
-  STATE.cross_chain_vault.set(asset_denom, current_balance + amount)
-  EMIT Event("CrossChainVaultCredited", { asset: asset_denom, amount: amount, source_tx: source_tx_hash })
+  current_balance = STATE.treasury_assets.get(asset_denom) or 0
+  STATE.treasury_assets.set(asset_denom, current_balance + amount)
+  EMIT Event("TreasuryCredited", { asset: asset_denom, amount: amount, source_tx: source_tx_hash })
 
 
 // Anyone can kick off a new auction if the auction period has passed.
@@ -676,3 +745,34 @@ FUNCTION settle_auction(auction_id):
 
   // This signals the protocol that new BTC is available for distribution
   EMIT Event("AuctionSettled", { id: auction_id, proceeds_btc: total_btc_proceeds })
+  
+  // Add auction proceeds to the main treasury
+  current_treasury_btc = STATE.treasury_assets.get("btc") or 0
+  STATE.treasury_assets.set("btc", current_treasury_btc + total_btc_proceeds)
+  
+  // Allocate all funds currently in the treasury
+  _allocate_treasury_funds()
+
+// NEW: INTERNAL function to allocate all assets in the treasury to the SWF and staker rewards pool.
+FUNCTION _allocate_treasury_funds():
+  split = STATE.config.treasury_revenue_split
+  
+  for asset, amount in STATE.treasury_assets.items():
+    if amount == 0: continue
+    
+    // Calculate split
+    to_swf = amount * split.to_swf
+    to_rewards = amount - to_swf // Remainder to rewards to avoid dust
+    
+    // Add to SWF
+    current_swf_balance = STATE.swf_assets.get(asset) or 0
+    STATE.swf_assets.set(asset, current_swf_balance + to_swf)
+    
+    // Add to distributable rewards pool
+    current_reward_balance = STATE.distributable_rewards.get(asset) or 0
+    STATE.distributable_rewards.set(asset, current_reward_balance + to_rewards)
+    
+    EMIT Event("TreasuryAllocated", { asset: asset, to_swf: to_swf, to_rewards: to_rewards })
+
+  // Clear the treasury now that it's been allocated
+  STATE.treasury_assets = Map()
