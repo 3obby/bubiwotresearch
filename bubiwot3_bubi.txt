@@ -11,6 +11,7 @@ STATE.config: {
   proposal_bond_amount: Uint, // BUBI required to create a governance proposal
   proposal_voting_period_blocks: Uint,
   build_submission_period_blocks: Uint, // NEW: How long builders have to submit hashes
+  async_recovery_period_blocks: Uint, // NEW: How long an async recovery request stays open
   auction_period_blocks: Uint, // How often auctions can be started
   ubi_claim_period_blocks: Uint, // The cooldown period for UBI claims
   ubi_claim_cap_per_period: Uint, // Max total UBI that can be claimed in a period
@@ -24,6 +25,7 @@ STATE.config: {
 STATE.accounts: Map<PublicKey, Account>
 STATE.pending_guardian_replacements: Map<PublicKey, Map<PublicKey, GuardianReplacementRequest>>
 STATE.pending_bubi_unstakes: Map<PublicKey, UnstakeRequest>
+STATE.pending_async_recoveries: Map<PublicKey, AsynchronousRecoveryRequest> // NEW
 STATE.accumulated_bubi_for_auction: Uint // Fees collected for the next auction
 STATE.last_auction_start_block: Uint
 
@@ -386,11 +388,24 @@ BuildSubmission: {
 }
 // --- End NEW Data Structures ---
 
+// --- NEW Data Structure for Asynchronous Recovery ---
+AsynchronousRecoveryRequest: {
+  target_account_pubkey: PublicKey,
+  // The ephemeral public key of the new device, used to encrypt shares.
+  recovery_pubkey: PublicKey, 
+  // Map of guardian pubkey to their encrypted share.
+  contributed_shares: Map<PublicKey, Bytes>,
+  expiry_block: Uint,
+}
+// --- End NEW Data Structure ---
+
 
 // =================================================================
 // Core Account & Economy Functions (MVP)
 // (Largely similar to previous versions: register_account, set_recovery_info, attest_for_account, report_sybil, stake_bubi, claim_ubi, etc.)
 // =================================================================
+
+// NOTE: This logical group of functions represents the 'Account Hub (bubi-hub)' from the architecture docs.
 
 // The `attest_for_account` function is removed in favor of a private, ZK-based flow.
 
@@ -826,6 +841,8 @@ FUNCTION review_code_proposal(proposal_id, stake_amount: Uint, approved: Bool, c
 // =================================================================
 // On-Chain Infrastructure & Query Functions (MVP)
 // =================================================================
+
+// NOTE: This logical group of functions represents the 'On-Chain Registry (resolver-contract)' from the architecture docs.
 
 // INTERNAL function to update the registry. Can only be called by this contract.
 FUNCTION _update_registry_record(name: String, targets: List<String>):
@@ -1423,3 +1440,76 @@ FUNCTION finalize_succession(target_account_pubkey: PublicKey):
       deceased_owner: target_account_pubkey,
       heir_owner: new_owner_pubkey
   })
+
+// =================================================================
+// Asynchronous Recovery Functions
+// =================================================================
+
+// Called by anyone on behalf of a user who has lost their device.
+// This creates an on-chain request that guardians can respond to asynchronously.
+FUNCTION initiate_asynchronous_recovery(target_account_pubkey: PublicKey, recovery_pubkey: PublicKey):
+  // Pre-conditions
+  ASSERT STATE.accounts.get(target_account_pubkey) is not None, "Target account does not exist"
+  ASSERT STATE.pending_async_recoveries.get(target_account_pubkey) is None, "Recovery process already initiated for this account"
+
+  // Create and store the recovery request
+  request = AsynchronousRecoveryRequest {
+    target_account_pubkey: target_account_pubkey,
+    recovery_pubkey: recovery_pubkey,
+    contributed_shares: Map(),
+    expiry_block: current_block + STATE.config.async_recovery_period_blocks,
+  }
+  STATE.pending_async_recoveries.set(target_account_pubkey, request)
+
+  EMIT Event("AsynchronousRecoveryInitiated", { 
+    target: target_account_pubkey, 
+    recovery_pubkey: recovery_pubkey,
+    expiry: request.expiry_block
+  })
+
+// Called by a guardian to contribute their share to an active recovery process.
+// The share must be encrypted off-chain with the recovery_pubkey.
+FUNCTION contribute_recovery_share(target_account_pubkey: PublicKey, encrypted_share: Bytes):
+  // Pre-conditions
+  guardian_pubkey = sender
+  request = STATE.pending_async_recoveries.get(target_account_pubkey)
+  ASSERT request is not None, "No active recovery process for this account"
+  ASSERT current_block < request.expiry_block, "Recovery period has expired"
+
+  target_account = STATE.accounts.get(target_account_pubkey)
+  ASSERT guardian_pubkey in target_account.guardians, "Sender is not a guardian for the target account"
+  ASSERT request.contributed_shares.get(guardian_pubkey) is None, "Guardian has already contributed a share"
+
+  // Store the encrypted share
+  request.contributed_shares.set(guardian_pubkey, encrypted_share)
+  STATE.pending_async_recoveries.set(target_account_pubkey, request)
+
+  EMIT Event("RecoveryShareContributed", { target: target_account_pubkey, guardian: guardian_pubkey })
+
+// Called by the original owner if they regain access to their account, to prevent a malicious or mistaken recovery.
+FUNCTION cancel_asynchronous_recovery():
+  // Pre-conditions
+  owner_pubkey = sender
+  request = STATE.pending_async_recoveries.get(owner_pubkey)
+  ASSERT request is not None, "No recovery in progress for this account"
+
+  // The owner proving they are in control is enough to cancel.
+  STATE.pending_async_recoveries.remove(owner_pubkey)
+  
+  // Also update activity to prevent succession attempts
+  account = STATE.accounts.get(owner_pubkey)
+  account.last_activity_block = current_block
+  STATE.accounts.set(owner_pubkey, account)
+
+  EMIT Event("AsynchronousRecoveryCancelled", { owner: owner_pubkey })
+
+// Called by anyone to clean up an expired recovery request from state.
+FUNCTION cleanup_asynchronous_recovery(target_account_pubkey: PublicKey):
+  request = STATE.pending_async_recoveries.get(target_account_pubkey)
+  ASSERT request is not None, "No recovery request to clean up"
+  ASSERT current_block >= request.expiry_block, "Recovery request has not expired yet"
+
+  // Remove the expired request
+  STATE.pending_async_recoveries.remove(target_account_pubkey)
+
+  EMIT Event("AsynchronousRecoveryCleaned", { target: target_account_pubkey })
