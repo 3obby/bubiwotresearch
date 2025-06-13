@@ -72,16 +72,22 @@ veloper economy with staked code reviews, and
 an ENS-like on-chain registry (resolver-contract)
 that maps human-readable names to decentral-
 ized infrastructure endpoints.
-3. The In-Browser P2P Client: A multi-layered
-sovereign portal built with web technologies (Type-
-Script, CosmJS, LibP2P, Nostr). It abstracts
-away key management complexity and orches-
-trates communication across three distinct lay-
-ers: an Appchain Service for on-chain transac-
-tions, a Nostr-based Social Service for discovery
-and signaling, and a LibP2P-based Private Ser-
-vice for secure, end-to-end encrypted data ex-
-change like recovery shares.
+3. The In-Browser P2P Client: The primary gateway
+to the ecosystem is a mobile-first, browser-based
+client that establishes a secure user session. Built
+with web technologies (TypeScript, CosmJS, LibP2P,
+Nostr), it delivers a sovereign wallet and identity
+manager with the simplicity of a modern web
+app. The client abstracts away key management
+complexity, presenting the user with a clean dash-
+board to manage their wallet, a visual "Recovery
+Health" score for their social recovery setup, and a
+social hub. It orchestrates communication across
+three distinct layers: an Appchain Service for on-
+chain transactions, a Nostr-based Social Service
+for discovery and signaling, and a LibP2P-based
+Private Service for secure, end-to-end encrypted
+data exchange like recovery shares.
 4. Off-Chain Validator Services: Critical infras-
 tructure operated by the appchain's validators
 and other permissionless actors. Their role is
@@ -101,9 +107,15 @@ The account recovery process is redesigned around a
 powerful cryptographic primitive known as Bottom-Up
 Secret Sharing (BUSS), as detailed in the ANARKey
 paper. This eliminates complex on-chain state man-
-agement in favor of a more secure and efficient two-
-phase, primarily off-chain process. This process con-
-sists of a one-time backup phase and a recovery phase.
+agement for recovery sessions, moving the interactive
+parts of the process off-chain. While the direct ex-
+change of cryptographic shares between a user and
+their guardians occurs over a secure peer-to-peer net-
+work, the process fundamentally relies on the BUBIWOT
+smart contract as a public bulletin board to store es-
+sential recovery data. This hybrid approach streamlines
+recovery into a secure and efficient two-phase process: a
+one-time backup and a recovery phase.
 
 4.1
 
@@ -193,41 +205,7 @@ nature Scheme (TSS) operated by the BUBIWOT
 appchain's own validator set, removing single points
 of failure and allowing smart contracts to safely
 trigger BTC payouts.
-• Strong-form Proof-of-Personhood via a User-
-Defined Web of Trust: BUBIWOT establishes
-a robust, scalable method for identity validation
-by putting the user in control of their own web of
-trust. To further secure the critical first attestation, this social verification is paired with a **verifiable device fingerprint**. The BUBIWOT client can leverage native hardware security (e.g., a phone's TPM or secure enclave) to generate a unique, unforgeable signature for the user's device. This cryptographically binds the initial `is_human_verified` status not just to a social consensus but to a specific piece of hardware, creating a powerful defense against low-cost, clustered Sybil attacks without introducing centralized gatekeepers. Instead of relying on a single, rigid boot-
-strapping event, the protocol's integrity is an-
-chored in a flexible, user-defined policy system.
-Each user defines their own on-chain Account-
-Policy, specifying the criteria an attestor must
-meet to vouch for their humanity and confer the
-is_human_verified status. This policy can require
-a minimum reputation score, a minimum amount
-of staked BUBI, or that the attestor must al-
-ready be a verified human. The protocol sup-
-ports highly granular and composable rules (e.g.,
-requiring attestations from a specific group of
-friends combined with high-reputation strangers),
-allowing users to dynamically use their social graph
-as a security feature. This creates a flexible, user-
-sovereign trust graph that scales globally. New
-users can set lenient policies to get bootstrapped
-into the network by early adopters, while estab-
-lished users can enforce stringent policies to max-
-imize their security. While in-person (IRL) meet-
-ings are a powerful attestation method, they are
-not a protocol requirement; the system's secu-
-rity derives from the economic and reputational
-liability of attestors, governed by the recipient's
-own policy. To help users navigate these
-powerful options, the BUBIWOT client pro-
-vides wizard-driven tools to create poli-
-cies based on an intuitive security levels
-(e.g., "Basic", "Enhanced", "Maximum"),
-along with simulations to visualize the ef-
-fects of different policy choices.
+• **Evidence-Based, Composable Personhood:** BUBIWOT establishes a robust, scalable method for identity validation by treating identity as a collection of **verifiable evidence** rather than a single status. The protocol stores cryptographic proofs of identity-forming events directly on-chain, such as records of successful **peer attestations** (social verification) and a list of **hardware-bound device fingerprints** (hardware verification). This evidence-based model allows external applications to query for the specific proofs they require, answering not just *if* a user is a unique person, but *how* their uniqueness has been verified. UBI eligibility is gated on a combination of these proofs (e.g., requiring both peer and device verification), but the true power lies in the system's composability. This is coupled with a rich **identity vector** of atomic, on-chain metrics committed to a Merkle tree, allowing a user to generate ZK-proofs for any combination of facts (e.g., "Prove I have at least one verified device AND my developer reputation is > 50") without revealing unrelated data.
 • Secure Software Supply Chain: The proto-
 col ensures that users run community-approved
 code through a trust-minimized deployment pipeline.
@@ -363,60 +341,7 @@ storage, enabling a scalable social platform where
 content can be ranked and filtered by value (do-
 nated BUBI), creating a rich, user-curated atten-
 tion economy.
-• Durable Identity and Reputation: Users establish cryptographic proof-of-personhood through
-IRL attestations. This strong-form identity supports decentralized access control, reputation building, and social recovery, enhancing digital sovereignty.
-• **Integrated Bug Bounties and Veri-
-fiable Reviews:** To secure the protocol's evolution, the developer econ-
-omy moves beyond simple staked reviews. The sys-
-tem includes an integrated bug bounty program,
-allowing reviewers to earn significant rewards
-for identifying verifiable on-chain bugs. Gov-
-ernance can then confirm these findings, re-
-warding the diligent reviewer and slashing the
-stakes of those who negligently approved the
-flawed code. This creates a powerful, objective, and
-incentive-aligned system for securing the codebase.
-
-8
-
-Use Cases
-
-The BUBIWOT protocol is designed to support a wide
-variety of essential human interactions through secure,
-decentralized technology:
-• Banking and UBI: Users can securely send
-and receive BUBI tokens on the appchain. Cru-
-cially, holding BUBI tokens allows users to claim
-a proportional share of the network's BTC rev-
-enues, creating a sustainable yield. **The protocol programmatically captures its own BUBI-denominated transaction fees and auctions them for BTC through a transparent, on-chain market mechanism. It also captures B2B revenue from its Humanity Oracle service—ranging from simple identity checks to complex, privacy-preserving attribute verifications—accepting fees in foreign assets (e.g., from Ethereum or Solana) into its treasury. This collected revenue is then split according to a governance-defined policy: one portion is made available for BUBI holders to claim as yield, while the other is deposited into the protocol's Sovereign Wealth Fund to be strategically deployed for long-term growth.** The resulting BTC and other assets are then made available to BUBI holders, distributed via a trust-minimized TSS vault controlled by the appchain's validators.
-• **Protocol Diplomacy and Meta-Governance:** The protocol leverages its Sovereign Wealth Fund as its chief diplomatic tool. Through on-chain governance, BUBI holders can vote to form durable, symbiotic alliances with other protocols, executing strategic asset swaps, joint liquidity provisions, and reciprocal governance pacts that are enforced by the BUBIWOT chain. This forges deep economic moats and turns potential competitors into vested partners. The SWF's holdings of other governance tokens also grant BUBIWOT a voice in external DAOs, allowing BUBI holders to influence the broader Web3 ecosystem and steer it in directions that create value for the protocol.
-• **Decentralized Authentication (Human-Verified OAuth & Session Delegation):** BUBIWOT serves as a universal, decentralized authentication layer. Beyond simple login, it enables a "personal OAuth" system where users can grant specific, revocable, and often time-limited capabilities to third-party applications. For example, a user could grant a Web2 service permission to post on their behalf to the BUBIWOT social platform. The external service requests a `CapabilityGrant`, the user approves it in their BUBIWOT client, and the service receives a cryptographic authorization to perform a specific action without ever controlling the user's keys. This creates a powerful, Sybil-resistant, and user-centric alternative to traditional login and API key systems, all backed by real economic incentives.
-• **Decentralized Social Platform:** The protocol
-powers a censorship-resistant social media ecosys-
-tem. Users publish content (e.g., posts, replies)
-to decentralized Nostr relays for real-time com-
-munication. The BUBIWOT smart contracts store
-immutable, on-chain pointers to this content.
-For long-term persistence and enhanced
-data sovereignty, users can opt to pay a
-small fee to have important content archived
-to a durable, content-addressed storage net-
-work (e.g., IPFS). This fee directly funds
-the network of validators and pinning ser-
-vices that guarantee storage, creating a
-sustainable and incentive-aligned model for
-data permanence. This unique hybrid de-
-sign combines the speed of Nostr with the
-verifiable durability of paid decentralized
-storage, enabling a scalable social platform where
-content can be ranked and filtered by value (do-
-nated BUBI), creating a rich, user-curated atten-
-tion economy.
-• **Durable Identity and Reputation:** Users es-
-tablish cryptographic proof-of-personhood through
-IRL attestations. This strong-form identity sup-
-ports decentralized access control, reputation build-
-ing, and social recovery, enhancing digital sovereignty.
+• **Durable Identity and Reputation:** Users establish cryptographic proof-of-personhood through a combination of device-binding and peer-based attestations. This evidence-based identity supports decentralized access control, reputation building, and social recovery, enhancing digital sovereignty.
 • **Inheritable Digital Estates:** BUBIWOT directly addresses the critical, unsolved problem of digital asset inheritance. The protocol provides tools for users to create a programmable "smart will," designating heirs and defining specific, on-chain conditions for asset succession. This transforms a BUBIWOT account into a durable digital legacy, creating the ultimate user lock-in and making the platform a prime venue for long-term, intergenerational value storage.
 • **Sovereign Developer & App Ecosystem:** BUBIWOT fosters a vibrant ecosystem for its own
 evolution and for trusted third-party applications. Any user can create a BUBI-
@@ -441,10 +366,10 @@ can attach micropayments (in BUBI) to mes-
 sages or actions to incentivize others' attention,
 fostering a vibrant, responsive, and economically
 sustainable social graph.
-• **Humanity-as-a-Service: The B2B Oracle & Personhood Marketplace:** BUBIWOT's most powerful feature is its ability to serve as a decentralized, cross-chain oracle for Proof-of-Humanity. Any external dApp, DAO, or protocol can integrate with BUBIWOT to verify that their users are unique human beings, effectively outsourcing Sybil resistance.
-    *   **Mechanism**: A dApp on another chain (e.g., Ethereum) can send a query to the BUBIWOT smart contracts via a bridge. This query can be a simple check ("Is address `0x123...` controlled by a verified human?") or **a complex, privacy-preserving request ("Can the owner of `0x123...` generate a ZK-proof that they are a verified human with a reputation score over 500 and possess a specific Verifiable Credential?").** The user generates the required proof client-side, preserving their privacy, and the BUBIWOT oracle provides a definitive verification to the dApp.
-    *   **Revenue Generation**: The querying dApp pays a fee (e.g., in USDC) to the BUBIWOT treasury for this service, **with premium fees for more complex, high-value ZK-based queries.** The BUBIWOT contract then provides a definitive `true` or `false` answer.
-    *   **Use Cases**: This enables fair airdrops, one-person-one-vote DAO governance, and Sybil-resistant NFT mints. It unlocks advanced applications like undercollateralized lending based on reputation and powers a new, user-owned data economy. Verified humans can securely pool their private data to train AI models, earning revenue in a privacy-preserving way. BUBIWOT's Sybil resistance guarantees high-quality, human-generated datasets, making it the foundational coordination and payment layer for this new economic paradigm. This creates a constant, growing revenue stream and transforms BUBIWOT into an indispensable piece of infrastructure for the entire digital economy.
+• **Humanity-as-a-Service: The ZK-OAuth Capability Protocol:** BUBIWOT's most powerful feature is its ability to serve as a decentralized, cross-chain oracle for programmable, human-centric capabilities. Any external dApp, DAO, or protocol can integrate with BUBIWOT to securely interact with provably unique human beings, effectively outsourcing Sybil resistance and high-stakes user authentication.
+    *   **Mechanism**: A dApp on another chain (e.g., Ethereum) or a web service can construct a `CapabilityRequest`, defining a set of conditions (e.g., "user must have developer reputation > 500") and a desired permission (e.g., "sign this login message"). This request is published to the decentralized Nostr network, and a pointer to it is anchored on the BUBIWOT chain with a fee. The user's BUBIWOT client detects this request, and with a single tap, the user can generate a privacy-preserving ZK-proof to satisfy the conditions and authorize the capability. For high-security actions, the request can even require a threshold of the user's guardians to co-sign the approval off-chain, with all signatures bundled together for verification.
+    *   **Revenue Generation**: The querying dApp pays a fee (e.g., in USDC) to the BUBIWOT treasury for this service, **with premium fees for more complex, high-value ZK-based queries or those requiring guardian interaction.** The BUBIWOT contract provides the immutable on-chain grant, while the user's client provides the cryptographic proof back to the dApp.
+    *   **Use Cases**: This enables fair airdrops, one-person-one-vote DAO governance, and Sybil-resistant NFT mints. It unlocks advanced applications like undercollateralized lending based on reputation, secure multi-guardian-authorized access to DAO tooling, and powers a new, user-owned data economy. Verified humans can securely pool their private data to train AI models, earning revenue in a privacy-preserving way. This creates a constant, growing revenue stream and transforms BUBIWOT into an indispensable piece of infrastructure for the entire digital economy.
 
 9
 

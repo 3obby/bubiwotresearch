@@ -1,0 +1,258 @@
+# BUBIWOT Client Design: User Actions & Interfaces
+
+This document outlines the design for the BUBIWOT client, an in-browser P2P application that serves as the primary user portal to the BUBIWOT ecosystem. The design prioritizes a simple, intuitive user experience, abstracting the underlying cryptographic complexity.
+
+## 1. Core UI/UX Philosophy
+
+-   **Sovereign & Simple**: The primary goal is to create an experience that feels as easy as using a modern fintech app like Venmo or Cash App. The user maintains full self-custody and control, but the interface for key management, recovery, and on-chain actions is abstracted into simple, guided flows.
+-   **Progressive Security**: Users are not overwhelmed with security tasks upon signup. Instead, the client uses a "progressive security" model with nudges, checklists, and health scores to encourage best practices over time (e.g., setting up social recovery, reviewing guardians, creating a succession plan).
+-   **Mobile-First Dashboard**: The central UI is a mobile-first dashboard that provides glanceable information and clear calls-to-action. The "card" based layout mentioned in the architecture document is a key organizing principle.
+-   **Always Earning**: A core part of the user experience is visualizing the constant, passive accumulation of value. The UI will prominently feature the Universal Basic Income (UBI) and BTC staking rewards, reinforcing the idea that the user's balance is always growing.
+
+## 2. The Main Dashboard View
+
+This is the home screen the user sees after logging in. It's designed to be a hub for financial activity and key status updates.
+
+-   **Header Component**:
+    -   **User Identity**: User's avatar and handle (e.g., `@alice`).
+    -   **Primary Balance (BUBI)**: Displayed in a large, prominent font. A subtle animation (like a soft shimmer or a slowly ticking last digit) can hint at the constant accrual of UBI.
+    -   **Secondary Balance (BTC)**: A smaller display below the BUBI balance, showing claimable BTC rewards from network fees.
+
+-   **Primary Call-to-Action (CTA) Buttons**:
+    -   **[ Send ]**: Large, centered button to initiate the primary payment flow.
+    -   **[ Request / QR ]**: A secondary button to generate a QR code or payment link.
+
+-   **Status Cards Component** (A horizontally scrollable or compact list view):
+    -   **Recovery Health Card**: Displays a shield icon and a percentage score (e.g., "85% Secure"). **This score is computed by the client based on a combination of on-chain atomic metrics like guardian count, liveness, and reputation.** The card's border is color-coded (green/yellow/red) based on the score. Tapping it navigates to the Guardian Management view.
+    -   **UBI Card**: Shows currently accrued, claimable UBI. Displays text like "15.2 BUBI Ready to Claim". Tapping it initiates the `claim_ubi` transaction flow.
+    -   **Governance Card**: Notifies the user of active proposals. Displays text like "1 Proposal Needs Your Vote". Tapping it navigates to the Governance view.
+
+-   **Feed Component (Transaction History)**:
+    -   A vertically scrollable list, styled like a social payment app feed.
+    -   Each item is a transaction, showing:
+        -   **Counterparty**: Avatar and name (e.g., `@bob` or "Protocol Reward").
+        -   **Amount & Direction**: `+ 20 BUBI` or `- 50 BUBI`.
+        -   **Memo/Note**: "For dinner last night 🍕".
+        -   **Timestamp**.
+    -   Special system-generated entries will appear in the feed:
+        -   `+ 1.25 BUBI (Your Universal Basic Income)`.
+        -   `+ 0.0001 BTC (Your Share of Network Fees)`.
+        -   `Voted 'Yes' on Proposal #123`.
+
+### 2.5. Design Improvements for a "Brain-Dead Simple" User Experience
+
+To achieve the goal of a Venmo-like simple experience, the following refinements are proposed:
+
+1.  **Drastically Simplified Navigation**: The primary navigation is reduced to the absolute essentials, preventing cognitive overload. Complex features are nested logically rather than occupying prime real estate. (See updated Section 4).
+2.  **Solving the "First Friend" Problem**: A clear, low-friction path for new users to get verified even if they don't know anyone on the network yet. This is critical for initial adoption and preventing user drop-off.
+3.  **Human-Centric Security Setup**: Security concepts like "Guardians" and "Inheritance" are re-framed using simpler language and guided, educational wizards. This turns a potentially intimidating task into a reassuring one.
+4.  **Aggressive Progressive Disclosure**: New users are only shown what they need to get started (receive UBI, secure their account). Advanced features like Governance and the App Store are revealed later, once the user is comfortable with the core functionality. The "Setup Checklist" becomes a "First Steps" guide.
+
+## 3. Breakdown of User Actions and Interfaces
+
+This section details the primary user flows and the UI components required to support them.
+
+### 3.1. Onboarding & Initial Setup
+
+#### Action: Create Account
+-   **Interface**: A clean, welcoming, multi-step wizard.
+-   **Flow**:
+    1.  **Welcome Screen**: "Welcome to BUBIWOT. A new, human-powered economy." Button: `[ Create Account ]`.
+    2.  **Key Generation**: The client generates keys locally. A clear message explains the concept of self-custody: "Your keys, your funds. We'll help you secure them."
+    3.  **Device Fingerprint**: The client interfaces with the device's hardware security module (TPM/Secure Enclave) to generate and register the `device_fingerprint_hash` on-chain. UI Text: "Securing account to this device."
+    4.  **Handle Selection**: User chooses a unique handle (`@username`).
+    5.  **Account Registration**: The client calls `register_account` on-chain.
+    6.  **Landing**: The user lands on the main dashboard with an empty feed and a prominent "Setup Checklist" card.
+
+#### Action: Get Verified (Claim Humanity)
+-   **Interface**: A guided, wizard-style flow launched from a "First Steps" guide on the dashboard.
+-   **Flow**:
+    1.  **Introduction**: "Verify you're human to unlock UBI and other core features."
+    2.  **Policy Selection**: The client helps the user configure their `AccountPolicy` using simple presets. UI: "Choose your attestation security level: [Basic], [Enhanced], [Maximum]".
+    3.  **Find Attestors**: The user is presented with two clear options:
+        -   **"Ask a Friend"**: Uses the social service to find existing contacts on BUBIWOT, and generates a simple QR code or deep link for a friend to scan and attest.
+        -   **"Ask the Community" (The 'First Friend' Solution)**: If the user is new, this flow connects them with trusted, high-reputation "Community Verifiers" who have opted-in to help onboard newcomers. The app can facilitate a simple, asynchronous request, protecting both parties' privacy. This removes the critical onboarding blocker of not knowing anyone.
+    4.  **ZK-Proof Generation**: In the background, the client receives cryptographic attestations from peers, generates the ZK-proof, and calls `claim_humanity_with_proof` on-chain. This is the "magic" that abstracts away the complexity.
+    5.  **Confirmation**: A success screen: "Congratulations, you're verified! Your UBI will now begin to accrue."
+
+### 3.2. Core Financial Actions
+
+#### Action: Send BUBI
+-   **Interface**: A full-screen modal launched from the `[ Send ]` button.
+-   **Flow**:
+    1.  **Recipient Input**: Search for a contact (via Nostr), paste a BUBIWOT address, or scan a QR code.
+    2.  **Amount Input**: Enter the BUBI amount. A small toggle allows viewing the equivalent value in a local fiat currency.
+    3.  **Add Note**: An optional text field for a memo.
+    4.  **Review Screen**: "You are sending 50 BUBI to @bob."
+    5.  **Confirmation**: User confirms with biometrics (FaceID/Fingerprint) or a PIN, which authorizes the client to sign and broadcast the transaction.
+
+#### Action: Claim UBI & Rewards
+-   **Interface**: A simple tap-and-confirm action on a dashboard card.
+-   **Flow**:
+    1.  User taps the "UBI Card" or a similar "BTC Rewards Card".
+    2.  A confirmation modal appears: "Claim your accrued 15.2 BUBI?".
+    3.  User confirms. The transaction is sent, the balance animates to its new value, and a new entry appears at the top of the transaction feed.
+
+### 3.3. Security & Account Management
+
+#### Action: Manage Guardians (Social Recovery)
+-   **Interface**: A dedicated "Security" view, accessible from the "Recovery Health" card. Framed as "Account Recovery Setup" with reassuring language.
+-   -   **Onboarding**: The first time a user enters this flow, a simple, 3-screen animated modal explains the concept: (1) "Lose your phone, not your money." (2) "Pick 3-5 trusted friends or family as your 'Recovery Crew'." (3) "If you get locked out, they can help you get back in. They never have access to your funds."
+-   **Flow**:
+    1.  The view prominently displays the **client-computed Recovery Health** score, visualized as a shield filling up.
+    2.  It lists current guardians with their avatar, name, and a simple status derived from on-chain metrics (e.g., "Active ✅", "Inactive for 2 months ⚠️").
+    3.  The `[+] Add a Recovery Helper` button opens a contact picker. The UI clearly states: "You're asking them to help you recover your account, not to access your money."
+    4.  Each guardian has a simple menu with options like "Send Reminder" or "Replace".
+    5.  Proactive nudges are framed simply: "One of your recovery helpers, @charlie, has been quiet. It's a good idea to check in or choose someone else."
+
+#### Action: Setup & Manage Inheritance
+-   **Interface**: A "Succession Plan" wizard within the "Security" section. It's hidden by default and accessible via an "Advanced Security" menu to avoid overwhelming new users.
+-   **Flow**:
+    1.  **Introduction**: Explains how a user can pass on their account in simple terms. "Decide what happens to your account in the future."
+    2.  **Select Heirs**: Pick trusted contacts. The UI clarifies: "Heirs can only access your account after the conditions you set are met."
+    3.  **Set Threshold**: "How many heirs must agree to the succession? (e.g., 2 of 3)".
+    4.  **Set Inactivity Period**: "Succession can be initiated if your account is inactive for [1 year]."
+    5.  **Review & Confirm**: The client calls `set_succession_policy` to store the policy on-chain.
+
+### 3.4. Governance & Ecosystem
+
+#### Action: Vote on a Proposal
+-   **Interface**: A "Governance" section listing proposals with their status ("Active", "Passed", "Rejected").
+-   **Flow**:
+    1.  User selects an active proposal.
+    2.  The client displays the proposal's title and description (fetched from decentralized storage via `description_hash`).
+    3.  Simple voting buttons are presented: `[ Vote Yes ]`, `[ Vote No ]`, `[ Abstain ]`.
+    4.  When tapped, the client generates the necessary ZK-proof locally and submits the vote by calling `cast_private_vote`. The user never exposes their public key.
+    5.  The UI updates to show "You voted on this proposal," maintaining user privacy while providing feedback.
+
+#### Action: Browse the Sovereign App Store
+-   **Interface**: An "Apps" tab or card on the dashboard.
+-   **Flow**:
+    1.  The client fetches the list of community-vetted apps from the `resolver-contract`.
+    2.  It displays a grid of apps with icons, names, and short descriptions.
+    3.  Tapping an app opens its interface within a sandboxed environment inside the BUBIWOT client, ensuring a secure and seamless experience.
+
+### 3.5. Capability Granting & External Interactions (The ZK-OAuth Flow)
+
+This is a core, user-facing security flow, triggered when an external application requests a capability.
+
+#### Action: Approve a Capability Request
+-   **Interface**: A non-intrusive notification ("App XYZ is requesting permission") that opens a full-screen, bottom-sheet modal. The design is clean and resembles a standard OS permission prompt (e.g., "Allow App to access your location?").
+-   **Flow**:
+    1.  **Request Discovery**: The client's Nostr service (`socialStore`) receives a `kind:31111` event tagged for the user. It parses the `CapabilityRequest`.
+    2.  **Human-Readable Prompt**: The modal clearly and simply displays what is being requested.
+        -   **Headline**: "Approve Request from [dApp Name]?"
+        -   **Permissions List**: A checklist of requested predicates and capabilities (e.g., "✅ Verify you are a human", "✅ Prove your reputation is > 500", "✍️ Sign a login message").
+        -   **Guardian Requirement**: If the request requires guardian co-signing, a special section appears: "⚠️ This action requires approval from **2 of your 3** recovery helpers."
+    3.  **User Decision**: Clear `[ Approve ]` and `[ Deny ]` buttons.
+    4.  **Guardian Co-signing (if needed)**: If the user approves a request that needs guardians, the client then sends a specific challenge to the guardians via Nostr/LibP2P. The user's modal updates to a "Waiting for guardians..." state.
+    5.  **Execution**: Once all conditions are met (user approval + guardian signatures), the client:
+        -   Generates the ZK-proof.
+        -   Calls `grant_capability` on-chain.
+        -   Bundles the ZK-proof and all required signatures into a `ProofBundle`.
+        -   Returns the bundle to the requesting application via an encrypted Nostr DM or another specified callback method.
+
+### 3.6. Everyday Quick-Action Cheat-Sheet
+
+| Category          | Primary CTA (1-Tap)                                    | Secondary / Context CTA(s)                                 | Where It Lives (Surface)                       | Typical Micro-Flow                                                                                         | Chain / P2P Call |
+|-------------------|--------------------------------------------------------|------------------------------------------------------------|-----------------------------------------------|----------------------------------------------------------------------------------------------------------------|------------------|
+| Pay / Send        | Floating **Send** FAB (center of bottom nav)           | Long-press feed item → "Pay back", QR scanner shortcut     | Dashboard FAB, Feed context menu, Cmd-K palette | FAB → pick recipient → enter amount → biometric confirm → success toast, feed entry slides in from top       | `bank/send`      |
+| Request           | **Request** button next to FAB                         | QR modal from profile avatar                               | Dashboard, Profile                            | Tap **Request** → amount → share link / QR → inbound when paid, feed animates                                  | n/a              |
+| Claim UBI         | **Claim** pill on UBI card ("+1.6 BUBI ready")         | "Earn" tab top banner                                      | Dashboard card, Earn tab                     | Tap **Claim** → confirm modal → confetti burst → balance ticker increments                                     | `ubi/claim_ubi`  |
+| Claim BTC Rewards | **Claim BTC** button on BTC card                       | BTC line under balance header                              | Dashboard, Earn tab                           | Tap → confirm → sats rain animation                                                                            | `treasury/claim_rewards` |
+| Secure Account    | **Recovery Health** card (pulse indicator)             | Settings → Security                                        | Dashboard card, Settings                      | Tap card → Guardian wizard → save → Recovery score animates                                                    | multiple (`account/update_guardians`) |
+| Vote              | **Governance** card ("1 proposal needs vote")          | Governance tab                                             | Dashboard, Gov tab                            | Tap card → proposal → read → `Vote Yes/No/Abstain` → "Vote recorded" toast                                     | `gov/cast_private_vote` |
+| Explore dApps     | **Apps** bottom-nav tab                                | "Suggested dApps" row on dashboard                         | Apps tab, Dashboard suggestions               | Tap app → sandbox iframe opens → optional capability grant flow                                                | `grant_capability` |
+
+> Each row above maps 1-to-1 with a high-visibility surface area so the user is never more than a single tap from core value actions.
+
+---
+
+### 4. Information Architecture & Navigation
+
+A simplified, mobile-first bottom navigation bar with a central Floating Action Button (FAB) focuses the user on core actions. Advanced features are progressively disclosed within simpler top-level items.
+
+1.  **Home** 🏠 – The primary dashboard. Displays balances, key status cards (Recovery Health, UBI), and the transaction feed. This is the user's financial home base.
+2.  **[Send/Request]** ➕ (FAB) – A central, prominent button. Tapping it opens a simple modal with three clear options: `[ Send ]`, `[ Request ]`, and `[ Scan QR ]`.
+3.  **Profile** 👤 – A single destination for all user-centric management. This screen contains:
+    *   **Security**: Manage Guardians ("Recovery Crew"), view Recovery Health.
+    *   **Settings**: App preferences, notifications.
+    *   **Advanced**: Hidden by default, this section contains "Succession Plan", "Governance", **"Connected Apps" (to manage and revoke active `CapabilityGrant`s)**, and "Developer Mode". This keeps the main experience clean for non-power users.
+
+Power-users get a global **Cmd-K** palette (desktop) or pull-down gesture (mobile) to fuzzy-search contacts, actions, dApps, and settings.
+
+---
+
+### 5. Micro-Interactions & Visual Language
+
+• "Always earning" balance header – last digit of BUBI subtly ticks every 3 s  
+• Haptic pulse on successful send / claim  
+• Guardian liveness: green / amber / red ring around avatar; animates when heartbeat arrives  
+• Feed items slide in from top with spring easing; system rewards (UBI, BTC) use a distinct glow  
+• Dark-mode native; color tokens derived from semantic roles (positive, warning, neutral)
+
+---
+
+### 6. Session & State Model
+
+Client state is a trio of reactive stores:
+
+1. `chainStore`  – on-chain queries via CosmJS (wallet, UBI accrual, governance, capability grants)  
+2. `socialStore` – Nostr relays (feed, guardian heartbeats, **listening for `kind:31111` capability requests**)  
+3. `p2pStore`   – LibP2P encrypted channels (BUSS recovery shares, device mesh, **off-chain guardian signature aggregation**)
+
+Each store emits events through a unified **EventBus** so UI components remain framework-agnostic (works in React Server Components or any future renderer).
+
+Real-time sync strategy:
+
+• Stale-while-revalidate queries with exponential back-off  
+• App-visible network status banner when offline  
+• Optimistic UI for `send` – feed preview entry shows "pending..." badge until tx included
+
+---
+
+### 7. Offline-First & Error Resilience
+
+• Critical code, fonts, and last 50 feed items cached in IndexedDB via Workbox  
+• Actions queue – Any tx signed while offline is stored encrypted and auto-broadcast when connection restores  
+• Guardian heartbeat timeouts gracefully degrade recovery score with dashed outline instead of red flash  
+• Fallback RPC rotation: if primary RPC fails >3 s, auto-retry next endpoint from on-chain resolver
+
+---
+
+### 8. Extensibility Hooks
+
+• `useCapabilityGrant()` React hook abstracts capability grant UX for third-party dApps  
+• `PluginRegistry` – micro-frontends can register new dashboard cards (e.g., "DeFi Positions") after explicit user opt-in  
+• Theme tokens stored in user's encrypted data vault → portable across devices
+
+## 9. Core Venmo-Like Flow (Happy Path)
+
+1. User lands on **Dashboard** (`Home` tab)
+   • `useBalance()` hook begins SWR query → `chainStore.getBalances()`  
+   • Header ticker shows last digit of BUBI animating every 3 s.  
+   • Feed subscribes to `socialStore.events("tx")` for real-time inserts.
+
+2. Tap **Send** (floating FAB)  
+   a. A modal appears with `[Send]`, `[Request]`, `[Scan QR]`. User taps `[Send]`.
+   b. A full-screen modal opens for the send flow.
+   c. Step 1 "Recipient"
+      – `ContactPicker` (search → Nostr query) or **QRScan** (invokes `navigator.mediaDevices`).
+   d. Step 2 "Amount & Memo"
+      – `AmountInput` with fiat toggle (`useFxRate()`), optional emoji memo.
+   e. Step 3 "Review & Confirm"
+      – FaceID / fingerprint gate → `p2pStore.signTx(bank/send)`.
+   f. Optimistic insert into feed with `status:"pending"`; EventBus → `tx:pending`.
+
+3. Chain inclusion (≈ <6 s)  
+   • `chainStore.subscribe("TxIncluded")` resolves pending item → status badge fades.  
+   • Header balance counts up with spring easing.
+
+4. Tap **Request**  
+   – Generates `nostr:payment-request` URI & QR image.  
+   – Deep link copies to clipboard + share sheet (mobile).
+
+5. Tap **Claim UBI**  
+   – `ubi/claim_ubi` execute; confetti burst on success (Lottie).
+
+## 10. Route & Filesystem Map (Next 14 App Router)

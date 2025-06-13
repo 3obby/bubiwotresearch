@@ -1,0 +1,154 @@
+# BUBIWOT Atomic Metrics Vector
+
+This document outlines the comprehensive set of "Atomic Metrics" associated with each BUBIWOT account, reflecting the canonical on-chain `Account` struct. These metrics form a rich, machine-verifiable data vector that serves as the foundation for the protocol's most powerful features.
+
+The entire vector is committed to a per-account Merkle tree (`metrics_root`), allowing users to generate privacy-preserving Zero-Knowledge (ZK) proofs about any combination of these facts.
+
+These metrics are the "Lego blocks" for building trust and enabling complex interactions. They are used by:
+-   **External dApps & Protocols:** via the Humanity Oracle for Sybil-resistant airdrops, undercollateralized lending, and one-person-one-vote governance.
+-   **Peers:** for establishing trust, making connection decisions, and forming social graphs.
+-   **The BUBIWOT Protocol Itself:** for determining eligibility for features like UBI claims, governance proposals, and for calculating reputation.
+-   **Users:** to understand their own standing, security posture, and engagement within the ecosystem.
+-   **Communication Layers (e.g., Nostr):** to filter messages, create value-ranked content feeds, and enable novel social coordination mechanisms.
+
+---
+
+### 1. Verification Evidence (`verification_evidence`)
+*Stored directly on the Account, not in the metrics structs.*
+
+-   `peer_verification`: **Option<PeerVerificationRecord>**
+    -   Description: Contains the record of a successful social attestation event, including the block height and policy hash. `is_some()` indicates the user is peer-verified.
+-   `verified_devices`: **Map<FingerprintHash, DeviceRecord>**
+    -   Description: A map of all hardware-verified devices linked to the account. The number of active devices can be calculated from this.
+
+---
+
+### 2. Guardian Metrics (`guardian_metrics`)
+*Metrics describing the user's social recovery network and their role within it.*
+
+-   `guardian_count`: **Uint**
+    -   Description: The number of guardians currently in the user's social recovery set.
+-   `guardian_of_count`: **Uint**
+    -   Description: The number of other accounts for which this user serves as a guardian. A measure of being trusted by others.
+-   `guardian_liveness_ratio`: **Decimal**
+    -   Description: Percentage of the user's guardians who have submitted a recent "heartbeat" transaction, proving they are active and available.
+-   `guardian_set_avg_reputation`: **Uint**
+    -   Description: The average "guardian" reputation score across all of the user's selected guardians.
+-   `reciprocity_score`: **Decimal**
+    -   Description: Percentage of the user's guardians who also have this user as a guardian.
+-   `key_rotations_lifetime`: **Uint**
+    -   Description: The total number of times the user has rotated their dedicated "guardian key," indicating good security hygiene.
+
+---
+
+### 3. Liveness Metrics (`liveness`)
+*Metrics that proxy for a user's engagement and participation in the protocol.*
+
+-   `creation_block`: **Uint**
+    -   Description: The block height when the account was first created. A measure of account age.
+-   `last_activity_block`: **Uint**
+    -   Description: The block height of the user's last on-chain transaction, indicating freshness.
+-   `tx_count_30d`: **Uint**
+    -   Description: The number of transactions sent by the user in the last 30 days.
+-   `governance_votes_90d`: **Uint**
+    -   Description: The number of governance proposals the user has voted on in the last 90 days.
+-   `session_regularity_score`: **Uint**
+    -   Description: A 0-100 score indicating the consistency of the user's activity.
+
+---
+
+### 4. Reputation Metrics (`reputation`)
+*A map of scores reflecting a user's standing in various domains.*
+
+-   `scores`: **Map<String, Uint>**
+    -   Description: A map of reputation scores in different categories. (e.g., `{"general": 100, "developer": 50, "guardian": 20, "creator": 5}`).
+-   `review_acceptance_rate`: **Decimal**
+    -   Description: For developers, the percentage of their staked code reviews on proposals that ultimately passed.
+-   `successful_bounties_completed`: **Uint**
+    -   Description: The number of development bounties the user has successfully fulfilled and claimed.
+
+---
+
+### 5. Economic Metrics (`economic`)
+*Metrics that measure a user's economic stake and participation in the protocol's economy.*
+
+-   `bubi_staked_age_days`: **Uint**
+    -   Description: The average age of the user's staked BUBI.
+-   `auction_participation_count_90d`: **Uint**
+    -   Description: The total number of bids the user has placed in treasury auctions in the last 90 days.
+-   `auction_win_count_90d`: **Uint**
+    -   Description: The total number of treasury auctions won by the user in the last 90 days.
+-   `treasury_bounties_claimed_count`: **Uint**
+    -   Description: The number of bounties the user has successfully fulfilled and claimed.
+-   `bounties_funded_lifetime`: **Uint**
+    -   Description: The number of developer bounties the user has created and funded.
+-   `capability_grants_issued_count`: **Uint**
+    -   Description: The number of capability grants the user has issued to dApps.
+
+---
+
+### 6. Security Metrics (`security`)
+*Metrics related to a user's security history, posture, and adherence to protocol rules.*
+
+-   `times_slashed_lifetime`: **Uint**
+    -   Description: The number of times the user has been slashed for malicious behavior or protocol violations.
+-   `sybil_reports_against_count`: **Uint**
+    -   Description: The number of accepted Sybil reports that have been successfully filed against this user.
+-   `successful_reports_by_user`: **Uint**
+    -   Description: The number of Sybil reports the user has successfully filed against others.
+-   `failed_recoveries_as_user`: **Uint**
+    -   Description: The number of times the user has failed their own social recovery process.
+-   `failed_recoveries_as_guardian`: **Uint**
+    -   Description: The number of times this user, acting as a guardian, failed to help someone else recover.
+-   `succession_policy_set`: **Bool**
+    -   Description: Indicates whether the user has configured an on-chain inheritance policy.
+-   `active_companion_device_count`: **Uint**
+    -   Description: The number of linked companion devices used for multi-device session redundancy.
+
+---
+
+### 7. Social Graph Metrics (`social_graph`)
+*Metrics that describe a user's position within the social web of trust and other platforms.*
+
+-   `trust_distance_from_genesis`: **Uint**
+    -   Description: Shortest path of attestations to a known foundation member.
+-   `nostr_total_zaps_received_value`: **Uint**
+    -   Description: Total value received via "zaps" on linked Nostr content.
+-   `nostr_unique_zappers_count`: **Uint**
+    -   Description: Number of unique users who have "zapped" this user's content.
+-   `external_address_count`: **Uint**
+    -   Description: The number of addresses from other blockchains linked to this BUBIWOT account.
+
+---
+
+### 8. Governance Metrics (`governance`)
+*Metrics detailing a user's involvement in shaping the protocol's future.*
+
+-   `proposals_submitted`: **Uint**
+    -   Description: Total number of governance proposals created by the user.
+-   `proposals_passed`: **Uint**
+    -   Description: Total number of proposals submitted by the user that passed.
+-   `vote_participation_rate_90d`: **Decimal**
+    -   Description: Percentage of proposals the user has voted on in the last 90 days.
+-   `vote_agreement_rate_90d`: **Decimal**
+    -   Description: Percentage of the user's votes that were on the winning side in the last 90 days.
+-   `is_delegating_vote`: **Bool**
+    -   Description: Indicates if the user has delegated their voting power.
+-   `delegated_voting_power`: **Uint**
+    -   Description: The amount of voting power delegated *to* this user.
+-   `review_stakes_placed`: **Uint**
+    -   Description: The total number of staked code reviews placed by the user.
+
+---
+
+### 9. Data Economy Metrics (`data_economy`)
+*Metrics related to a user's participation in the privacy-preserving data economy.*
+
+-   `data_vault_size_bytes`: **Uint**
+    -   Description: The ZK-provable size of the user's encrypted personal data vault.
+-   `active_capability_grants`: **Uint**
+    -   Description: How many dApps the user has currently granted active permissions.
+-   `data_lease_income_lifetime`: **Uint**
+    -   Description: Total revenue earned from securely leasing data.
+-   `data_pool_participations`: **Uint**
+    -   Description: The number of privacy-preserving data-sharing pools the user has joined.

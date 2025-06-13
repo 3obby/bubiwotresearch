@@ -1,0 +1,153 @@
+# BUBIWOT: A Programmable Trust Layer for External Protocols & dApps
+
+---
+
+### Introduction: Humanity-as-a-Service
+
+BUBIWOT is more than a blockchain; it's a programmable, privacy-preserving layer for human coordination. It offers a suite of on-chain services for external protocols, dApps, and businesses, solving fundamental problems like Sybil attacks, user authentication, and opaque marketing spend.
+
+It provides cryptographic "Lego blocks" that allow any application to interact with **provably unique humans** directly, and pay them for their attention, data, and actions, based on three guarantees:
+
+1.  **Proof-of-Humanity:** You are interacting with a unique person, not a bot, backed by on-chain evidence.
+2.  **Privacy-Preserving Targeting:** You can verify a user meets your criteria (e.g., "is a developer with high reputation") without ever seeing their private data, thanks to Zero-Knowledge proofs.
+3.  **Direct, On-Chain Settlement:** Payments are instant, programmatic, and P2P via the BUBIWOT chain.
+
+This document provides an overview of the novel value BUBIWOT offers to external entities.
+
+---
+
+### 1. The Core Offerings: BUBIWOT's On-Chain Services
+
+BUBIWOT enables entirely new classes of applications and services built on verifiable identity, reputation, and social trust. These can be understood as distinct, composable services.
+
+#### 1.1. Verifier Service: Identity & Sybil Resistance
+*These services answer the question: "Are you a unique human?"*
+
+*   **What It Is:** The ability to cryptographically verify that an interacting address belongs to a single, unique person. This is the bedrock of digital trust.
+*   **How It Works:** Your application requests a ZK-proof from the user that they have successfully completed on-chain peer verification (`verification_evidence.peer_verification.is_some()`). BUBIWOT provides a definitive `true/false` answer, ensuring one person, one action.
+*   **Use Cases:**
+    *   **Sybil-Resistant Airdrops & Fair Launches:** Distribute tokens to real, unique users, preventing bots from draining your launch allocation.
+    *   **One-Person-One-Vote Governance:** Build DAOs where voting power is based on personhood, not just capital.
+    *   **Bot & Spam Prevention:** Gate access to social features or forums to verified humans, drastically improving signal-to-noise ratio.
+    *   **Attribute Verification (e.g., Age Check):** Verify user attributes like "is over 18" by checking for on-chain attestations, without needing to collect government IDs.
+
+#### 1.2. Securer Service: Guardian-Backed Authentication
+*These services leverage the BUBIWOT social graph as a powerful, user-controlled multi-factor authentication (MFA) system.*
+
+*   **What It Is:** The ability to require approval from a user's trusted social recovery network (their "guardians") for high-stakes actions.
+*   **How It Works:** Your application crafts a `CapabilityRequest` with a `guardian_policy` requiring a specific number of guardians to co-sign the action. The BUBIWOT client handles the off-chain signature aggregation and bundles them into a verifiable `ProofBundle`.
+*   **Use Cases:**
+    *   **High-Value DAO Tooling:** Protect a treasury by requiring guardian approval for any transaction over a certain threshold.
+    *   **Recoverable Web2 Logins:** Integrate BUBIWOT as a 2FA option to secure email or other sensitive accounts, with recovery backed by the user's social graph instead of a central provider.
+    *   **Account & Access Management:** Implement fine-grained, user-controlled permissions for enterprise or family accounts.
+
+#### 1.3. Engager Service: Fraud-Proof Attention & Action Markets
+*These services are the evolution of advertising, enabling direct payment for provable, high-quality human interaction.*
+
+*   **What It Is:** A transparent marketplace to directly pay users for their provable attention and actions, replacing fraudulent and opaque ad-tech models.
+*   **How It Works:** You request a user to `SignPayload` with a receipt hash to prove they viewed content, or you can create bounties available only to users who match a specific ZK-proof of their attributes.
+*   **Use Cases:**
+    *   **Verifiable Content Views (Proof-of-Human Impression):** Pay a micro-bounty for each valid, signed receipt from a unique human who has watched your content.
+    *   **High-Quality Survey Data:** Get survey responses from a specific demographic (e.g., "verified developers with > 2 years on-chain activity") by first requiring a ZK-proof of their qualifications.
+    *   **Opt-in Data Leasing:** Request temporary, read-only access to a part of a user's encrypted data vault to train AI models, with the user earning revenue in real-time.
+
+#### 1.4. Observer Service: Public Good & Ecosystem Tooling
+*These services use BUBIWOT's public, on-chain data to provide value back to the ecosystem.*
+
+*   **What It Is:** The ability to read non-sensitive public metrics to build analytics, dashboards, and network health visualizers.
+*   **How It Works:** Your service runs a BUBIWOT node (or uses a public RPC) and makes calls to `get_account_metrics` to read public reputation scores, governance participation rates, etc.
+*   **Use Cases:**
+    *   **Reputation Dashboards & Leaderboards:** Build an analytics site similar to Dune Analytics for the BUBIWOT ecosystem.
+    *   **Guardian Network Visualizers:** Create tools that help users visualize the health and status of their social recovery network.
+
+---
+
+### 2. The Unifying Developer Experience: The ZK-OAuth Flow
+
+Most of these use cases are powered by a single, flexible protocol. Instead of dozens of bespoke APIs, BUBIWOT provides one powerful, standardized flow:
+
+1.  **Craft a `CapabilityRequest`**: Your application defines what it needs from a user (predicates, capabilities, guardian policies).
+2.  **Publish to Nostr**: The request is published as a standard, ephemeral Nostr event.
+3.  **Signal On-Chain**: A pointer to the Nostr event is anchored on the BUBIWOT chain with a fee via the `pay_and_post_cr` function.
+4.  **User Approval**: The BUBIWOT client detects the on-chain signal, fetches the request from Nostr, and presents a clear, human-readable prompt to the user.
+5.  **Receive Proof Bundle**: Your application receives a bundle containing the user's ZK-proofs and any required guardian signatures, which you can then verify.
+
+This architecture gives you verifiable, consensual, and precisely-scoped access to the world's first marketplace for human trust and attention.
+
+---
+
+### 3. The Engine: Privacy-Preserving Targeting with the Atomic Metrics Vector
+
+At the core of BUBIWOT's power is the **Atomic Metrics Vector**. Every user account contains a rich set of verifiable, on-chain facts about their identity, reputation, and activity. These metrics are the "Lego blocks" for building trust, defining audiences, and creating novel economic interactions.
+
+The entire vector is committed to a per-account Merkle tree (`metrics_root`), which allows a user to generate a privacy-preserving ZK-proof about any combination of these facts (e.g., "Prove my developer reputation is > 500 AND I have never been slashed") without revealing any unrelated personal data.
+
+As a developer, you can build ZK-proof requests against any combination of these primitives to create highly specific and valuable user interactions.
+
+---
+
+### Appendix: The Atomic Metrics Vector (Reference)
+
+This is the comprehensive set of on-chain data points you can use to build your audience and define your verification criteria. *This list is derived from the protocol's on-chain state for maximum accuracy.*
+
+#### **A. Verification Evidence**
+*Fundamental, verifiable facts about how an account's personhood is established.*
+*   `has_peer_verification`: (bool) Has the user completed social verification?
+*   `peer_verification_block`: (u64) How long ago the user was peer-verified.
+*   `active_device_count`: (u8) How many hardware-verified devices are linked.
+
+#### **B. Guardian Metrics**
+*Metrics related to the user's social recovery network.*
+*   `guardian_count`: (u8) Size of their trusted social recovery network.
+*   `guardian_of_count`: (u32) How many other users trust this account as a guardian.
+*   `guardian_liveness_ratio`: (Decimal) % of guardians who are verifiably online and active.
+*   `reciprocity_score`: (Decimal) % of guardians for whom this user is also a guardian.
+
+#### **C. Liveness Metrics**
+*Metrics indicating how active and consistent a user is on the network.*
+*   `last_activity_block`: (u64) How recently they used the network.
+*   `tx_count_30d`: (u32) A proxy for short-term engagement.
+*   `governance_votes_90d`: (u16) Number of recent governance votes.
+*   `session_regularity_score`: (u16) A score indicating the consistency of their activity.
+
+#### **D. Reputation Metrics**
+*Domain-specific scores reflecting earned expertise and status.*
+*   `scores`: (Map<String, Uint>) e.g., `{"general": 100, "developer": 50, "guardian": 20}`.
+*   `review_acceptance_rate`: (Decimal) For developers, the % of their code reviews on proposals that ultimately passed.
+*   `successful_bounties_completed`: (u32) Number of development bounties claimed.
+
+#### **E. Economic Metrics**
+*Metrics that create a picture of the user's economic activity and alignment.*
+*   `bubi_staked_age_days`: (u32) The average time their BUBI has been staked.
+*   `auction_participation_count_90d`: (u32) Number of recent auction bids.
+*   `auction_win_count_90d`: (u32) Number of recent auctions won.
+*   `treasury_bounties_claimed_count`: (u32) Number of bounties claimed.
+
+#### **F. Security Metrics**
+*Metrics related to security history and posture.*
+*   `times_slashed_lifetime`: (u16) Has this user ever been penalized for malicious behavior?
+*   `successful_reports_by_user`: (u32) How many Sybil accounts has this user successfully reported?
+*   `failed_recoveries_as_user`: (u16) How many times they have failed to recover their own account.
+*   `failed_recoveries_as_guardian`: (u16) How many times they have failed to help another user recover.
+*   `succession_policy_set`: (bool) Does this user have a long-term inheritance plan?
+*   `active_companion_device_count`: (u8) Number of secondary devices for session redundancy.
+
+#### **G. Social Graph Metrics**
+*Metrics that describe a user's position within the social web of trust.*
+*   `trust_distance_from_genesis`: (u8) Shortest path of attestations to a known foundation member.
+*   `nostr_total_zaps_received_value`: (u64) Total value received via "zaps" on linked Nostr content.
+*   `nostr_unique_zappers_count`: (u32) Number of unique users who have "zapped" this user's content.
+
+#### **H. Governance Metrics**
+*Metrics detailing a user's involvement in shaping the protocol's future.*
+*   `proposals_submitted`: (u16) Number of governance proposals created by the user.
+*   `vote_participation_rate_90d`: (Decimal) Percentage of proposals the user has voted on recently.
+*   `vote_agreement_rate_90d`: (Decimal) How often the user's vote aligns with the final outcome.
+*   `delegated_voting_power`: (u128) The amount of voting power delegated *to* this user.
+
+#### **I. Data Economy Metrics**
+*Metrics related to a user's participation in the privacy-preserving data economy.*
+*   `data_vault_size_bytes`: (u32) The ZK-provable size of the user's encrypted personal data vault.
+*   `active_capability_grants`: (u16) How many dApps has this user trusted with permissions?
+*   `data_lease_income_lifetime`: (u128) Total revenue earned from securely leasing data.
+*   `data_pool_participations`: (u16) The number of privacy-preserving data-sharing pools the user has joined.
