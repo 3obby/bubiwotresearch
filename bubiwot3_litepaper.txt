@@ -1,4 +1,4 @@
-BUBIWOT Litepaper v0.8
+BUBIWOT Litepaper v0.9
 towards sovereign accounts, banking, and communication
 Robert F. Ussery III
 June 2025
@@ -9,7 +9,7 @@ scheme using CosmWasm smart contracts to create a decentralized web of trust. Th
 sustainable economic model where token holders earn a share of protocol revenue in Bitcoin, and it powers
 a decentralized, censorship-resistant social platform. It functions as a foundational Humanity-as-a-Service
 layer for the entire decentralized web, enabling any application to verify human users, prevent Sybil attacks,
-and laying the foundation for inheritable digital estates and a user-owned data economy. The protocol leverages real-life peer-to-peer (IRL) attestations to securely establish and recover accounts,
+enabling socially-recoverable Bitcoin wallets, laying the foundation for inheritable digital estates, and powering a user-owned data economy. The protocol leverages real-life peer-to-peer (IRL) attestations to securely establish and recover accounts,
 proving humanity through strong-form identity, and economically incentivizing truthful participation. This paper
 provides a concise overview of the BUBIWOT architecture, its core functionalities, and the economic incentives
 that underpin its security model.
@@ -36,6 +36,7 @@ objectives:
 attestations.
 • Enable cryptographic, decentralized account re-
 covery.
+• Provide a user-controlled, socially-recoverable Bitcoin wallet via a Threshold Signature Scheme (TSS).
 • Secure digital legacy through programmable, on-chain inheritance.
 • Distribute Universal Basic Income (UBI) tokens
 backed by staked Bitcoin.
@@ -118,7 +119,7 @@ and `claim_ubi` all assert the **Attested** state.
 Every peer attestation adds an edge to the on-chain social graph **G(V,E)**.  
 Exposing graph-derived, ZK-verifiable metrics unlocks:
 
-* *Shortest-path proofs* – e.g. “Prove I'm ≤ 3 hops from a genesis validator.”  
+* *Shortest-path proofs* – e.g. "Prove I'm ≤ 3 hops from a genesis validator."  
 * *Personalised PageRank* – continuous trust scores (`τ_u(v) ∈ [0,1]`) that dApps can
   consume without learning the raw neighbourhood.  
 * *Spam attenuation & rate-limiting* based on trust mass.  
@@ -179,6 +180,7 @@ tion to perfectly reconstruct the original secret
 polynomial and compute the original secret key.
 The user's account is now recovered without any
 complex on-chain voting or session management.
+Crucially, this also restores full control over any Bitcoin held in the user's optional, protocol-managed sovereign vault.
 
 5
 
@@ -233,6 +235,7 @@ nature Scheme (TSS) operated by the BUBIWOT
 appchain's own validator set, removing single points
 of failure and allowing smart contracts to safely
 trigger BTC payouts.
+• **Sovereign Bitcoin Custody:** Beyond staking, BUBIWOT offers users an optional, socially-recoverable Bitcoin wallet. This is achieved through a Threshold Signature Scheme (TSS) where the validator set manages key shares for a user-dedicated Bitcoin address. The private key is never held by any single entity. Spending authority is granted only by a valid transaction from the user's BUBIWOT account, effectively linking Bitcoin security to the user's robust, socially-recoverable BUBIWOT identity.
 • **Evidence-Based, Composable Personhood:** BUBIWOT establishes a robust, scalable method for identity validation by treating identity as a collection of **verifiable evidence** rather than a single status. The protocol stores cryptographic proofs of identity-forming events directly on-chain, such as records of successful **peer attestations** (social verification) and a list of **hardware-bound device fingerprints** (hardware verification). This evidence-based model allows external applications to query for the specific proofs they require, answering not just *if* a user is a unique person, but *how* their uniqueness has been verified. UBI eligibility is gated on a combination of these proofs (e.g., requiring both peer and device verification), but the true power lies in the system's composability. This is coupled with a rich **identity vector** of atomic, on-chain metrics committed to a Merkle tree, allowing a user to generate ZK-proofs for any combination of facts (e.g., "Prove I have at least one verified device AND my developer reputation is > 50") without revealing unrelated data.
 • Secure Software Supply Chain: The proto-
 col ensures that users run community-approved
@@ -319,7 +322,7 @@ Loss of Devices or Keys
 
 Threat: Accidental key loss jeopardizes user accounts
 and staked funds.
-Mitigation: Robust social recovery is achieved via the cryptographic **Bottom-Up Secret Sharing** scheme. By retrieving public data from the smart contract and collecting deterministic shares from a threshold of guardians, a user can securely reconstruct their original key on a new device. **To enhance user experience and mitigate disruption from single-device loss, the protocol also supports optional session redundancy through a device mesh.** A user can designate companion devices (e.g., a laptop and a phone), each holding limited-privilege session keys. If one device is lost, the remaining device(s) can initiate an ephemeral co-signing process to securely generate a new session for a replacement device, often without needing to perform a full social recovery. This provides a practical layer of fault tolerance that minimizes panic and disruption for non-technical users. **To reduce the friction of real-time coordination, the protocol supports an asynchronous share-provisioning mechanism. Guardians can periodically attest to their liveness by pre-authorizing encrypted recovery components, which can be stored ephemerally on a decentralized network. This allows a user in recovery to aggregate the necessary components without requiring every guardian to be simultaneously online.** Crucially, this recovered key is the same key that controls the user's staked Bitcoin on the L1, ensuring that the primary economic stake is protected by the social recovery mechanism.
+Mitigation: Robust social recovery is achieved via the cryptographic **Bottom-Up Secret Sharing** scheme. By retrieving public data from the smart contract and collecting deterministic shares from a threshold of guardians, a user can securely reconstruct their original key on a new device. **To enhance user experience and mitigate disruption from single-device loss, the protocol also supports optional session redundancy through a device mesh.** A user can designate companion devices (e.g., a laptop and a phone), each holding limited-privilege session keys. If one device is lost, the remaining device(s) can initiate an ephemeral co-signing process to securely generate a new session for a replacement device, often without needing to perform a full social recovery. This provides a practical layer of fault tolerance that minimizes panic and disruption for non-technical users. **To reduce the friction of real-time coordination, the protocol supports an asynchronous share-provisioning mechanism. Guardians can periodically attest to their liveness by pre-authorizing encrypted recovery components, which can be stored ephemerally on a decentralized network. This allows a user in recovery to aggregate the necessary components without requiring every guardian to be simultaneously online.** Crucially, this recovered key is the same key that controls the user's staked Bitcoin on the L1, ensuring that the primary economic stake is protected by the social recovery mechanism. Furthermore, if the user has opted into a protocol-managed sovereign vault, recovering their BUBIWOT account seamlessly restores their control over the Bitcoin held within it, making BUBIWOT a single, resilient recovery point for their entire digital asset portfolio.
 
 7.4
 
@@ -348,29 +351,34 @@ account key, to set a new guardian key. This en-
 sures guardians can maintain their trusted sta-
 tus and ability to help others without needing to
 completely re-establish their social connections.
-*   **Decentralized Social Platform:** The protocol
+*   **Decentralized Social Platform with Sovereign Storage:** The protocol
 powers a censorship-resistant social media ecosys-
 tem. Users publish content (e.g., posts, replies)
 to decentralized Nostr relays for real-time com-
 munication. The BUBIWOT smart contracts store
 immutable, on-chain pointers to this content.
-For long-term persistence and enhanced
-data sovereignty, users can opt to pay a
-small fee to have important content archived
-to a durable, content-addressed storage net-
-work (e.g., IPFS). This fee directly funds
+For long-term persistence, users can pay a
+fee to have content archived to a durable,
+content-addressed storage layer operated by
+the protocol's own validator set. This model
+was chosen deliberately over existing solutions
+like IPFS, which lacks direct economic in-
+centives for storage, or Arweave, whose
+permanent endowment model makes assump-
+tions about the future cost of storage that
+are difficult to justify. Instead, BUBIWOT
+creates a direct, pay-as-you-go market for
+data permanence, where user fees directly fund
 the network of validators and pinning ser-
-vices that guarantee storage, creating a
-sustainable and incentive-aligned model for
-data permanence. This unique hybrid de-
-sign combines the speed of Nostr with the
-verifiable durability of paid decentralized
-storage, enabling a scalable social platform where
+vices that guarantee storage. This unique hy-
+brid design combines the speed of Nostr with the
+verifiable durability of a simple, incentive-aligned
+storage market, enabling a scalable social platform where
 content can be ranked and filtered by value (do-
 nated BUBI), creating a rich, user-curated atten-
 tion economy.
 • **Durable Identity and Reputation:** Users establish cryptographic proof-of-personhood through a combination of device-binding and peer-based attestations. This evidence-based identity supports decentralized access control, reputation building, and social recovery, enhancing digital sovereignty.
-• **Inheritable Digital Estates:** BUBIWOT directly addresses the critical, unsolved problem of digital asset inheritance. The protocol provides tools for users to create a programmable "smart will," designating heirs and defining specific, on-chain conditions for asset succession. This transforms a BUBIWOT account into a durable digital legacy, creating the ultimate user lock-in and making the platform a prime venue for long-term, intergenerational value storage.
+• **Inheritable Digital Estates:** BUBIWOT directly addresses the critical, unsolved problem of digital asset inheritance. The protocol provides tools for users to create a programmable "smart will," designating heirs and defining specific, on-chain conditions for asset succession. This applies not just to the BUBI account, but also to any Bitcoin held in the user's managed sovereign vault. This transforms a BUBIWOT account into a durable, inheritable digital legacy for a user's most valuable assets, creating the ultimate user lock-in and making the platform a prime venue for long-term, intergenerational value storage.
 • **Sovereign Developer & App Ecosystem:** BUBIWOT fosters a vibrant ecosystem for its own
 evolution and for trusted third-party applications. Any user can create a BUBI-
 denominated bounty to fund new features
@@ -441,7 +449,6 @@ inherent in real-world relationships, and a system of in-
 centivized human participation, BUBIWOT provides a
 robust, scalable, and secure solution for identity vali-
 dation. This positions it as a foundational technology
-for global-scale UBI distribution and secure, decentral-
-ized account management.
+not only for global-scale UBI and decentralized identity, but also as a next-generation platform for making Bitcoin self-custody secure, recoverable, and accessible to everyone.
 
 7

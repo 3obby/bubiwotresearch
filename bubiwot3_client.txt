@@ -70,8 +70,7 @@ This section details the primary user flows and the UI components required to su
     1.  **Introduction**: "Verify you're human to unlock UBI and other core features."
     2.  **Policy Selection**: The client helps the user configure their `AccountPolicy` using simple presets. UI: "Choose your attestation security level: [Basic], [Enhanced], [Maximum]".
     3.  **Find Attestors**: The user is presented with two clear options:
-        -   **"Ask a Friend"**: Uses the social service to find existing contacts on BUBIWOT, and generates a simple QR code or deep link for a friend to scan and attest.
-        -   **"Ask the Community" (The 'First Friend' Solution)**: If the user is new, this flow connects them with trusted, high-reputation "Community Verifiers" who have opted-in to help onboard newcomers. The app can facilitate a simple, asynchronous request, protecting both parties' privacy. This removes the critical onboarding blocker of not knowing anyone.
+        -   **"Ask a Friend"**: Uses the social service to find or invite contacts on BUBIWOT, and generates a simple QR code or deep link for a friend to scan and attest.
     4.  **ZK-Proof Generation**: In the background, the client receives cryptographic attestations from peers, generates the ZK-proof, and calls `claim_peer_verification` on-chain. This is the "magic" that abstracts away the complexity.
     5.  **Confirmation**: A success screen: "Congratulations, you're verified! Your UBI will now begin to accrue."
 

@@ -169,6 +169,14 @@ DataEconomyMetrics: {
   data_pool_participations: Uint, // Number of privacy-preserving data pools the user is part of.
 }
 
+// NEW: Data structure for a user's sovereign Bitcoin vault
+TssBtcVault: {
+  btc_pubkey: Bytes,
+  btc_address: String,
+  status: Enum("ACTIVE", "LOCKED"),
+  pending_tx_nonce: Uint,
+}
+
 Account: {
   owner_pubkey: PublicKey,
   status: AccountStatus, // NEW: The account's current lifecycle state.
@@ -213,6 +221,9 @@ Account: {
   guardian_pubkey_for_others: Option<PublicKey>,
   last_guardian_heartbeat_block: Uint, // For guardian proof-of-liveness
   btc_payout_address: Option<String>,
+
+  // NEW: Optional, user-managed sovereign vault
+  managed_btc_vault: Option<TssBtcVault>,
 }
 
 Proposal: {
@@ -292,7 +303,7 @@ CodeReview: {
 
 RegistryRecord: {
   owner_contract: Address, // e.g., The address of the Governance Module
-  targets: List<String>, // e.g., ["ipfs://...", "arweave://..."]
+  targets: List<String>, // e.g., ["bafybe... (content hash)", "https://..."]
   btc_lock_tx_proof: Bytes, // Proof their BTC is locked in the TSS escrow
 }
 
@@ -530,6 +541,7 @@ FUNCTION register_account(owner_pubkey, btc_payout_address: Option<String>, btc_
     metrics_root: get_empty_metrics_root(),
     metrics_version: 1,
     // ...
+    managed_btc_vault: None,
   }
   STATE.accounts.set(owner_pubkey, new_account)
   EMIT Event("AccountRegistered", { owner: owner_pubkey })
@@ -1583,3 +1595,52 @@ FUNCTION cleanup_asynchronous_recovery(target_account_pubkey: PublicKey):
   STATE.pending_async_recoveries.remove(target_account_pubkey)
 
   EMIT Event("AsynchronousRecoveryCleaned", { target: target_account_pubkey })
+
+// NEW: Called by a user to create their sovereign vault.
+FUNCTION create_sovereign_btc_vault():
+  user_pubkey = sender
+  user_account = STATE.accounts.get(user_pubkey)
+  ASSERT user_account is not None, "Account not found"
+  ASSERT user_account.managed_btc_vault is None, "Vault already exists"
+
+  // This event signals the off-chain TSS service to perform DKG
+  // and then call back to the contract to register the new address.
+  EMIT Event("SovereignVaultCreationRequested", { owner: user_pubkey })
+
+// NEW: Called by the TSS service itself to register the newly created vault address.
+FUNCTION _register_sovereign_btc_vault(owner_pubkey: PublicKey, btc_pubkey: Bytes, btc_address: String):
+  // Access control: only the TSS service's representative on-chain can call this.
+  ASSERT is_caller_tss_service(sender)
+  user_account = STATE.accounts.get(owner_pubkey)
+  ASSERT user_account is not None
+  
+  vault = TssBtcVault {
+    btc_pubkey: btc_pubkey,
+    btc_address: btc_address,
+    status: "ACTIVE",
+    pending_tx_nonce: 0,
+  }
+  user_account.managed_btc_vault = Some(vault)
+  STATE.accounts.set(owner_pubkey, user_account)
+  EMIT Event("SovereignVaultCreated", { owner: owner_pubkey, address: btc_address })
+
+// NEW: Called by the user to authorize a spend from their vault.
+FUNCTION authorize_btc_spend(recipient_address: String, amount_sats: Uint, fee_rate_sats_per_byte: Uint):
+  user_pubkey = sender
+  user_account = STATE.accounts.get(user_pubkey)
+  ASSERT user_account is not None, "Account not found"
+  vault = user_account.managed_btc_vault
+  ASSERT vault is not None and vault.status == "ACTIVE", "Vault is not active or does not exist"
+
+  // This event signals the TSS service to construct, sign, and broadcast the Bitcoin transaction.
+  EMIT Event("BtcSpendAuthorized", {
+    owner: user_pubkey,
+    recipient: recipient_address,
+    amount: amount_sats,
+    fee_rate: fee_rate_sats_per_byte,
+    nonce: vault.pending_tx_nonce
+  })
+  
+  // Increment nonce to prevent replay of the same authorization
+  vault.pending_tx_nonce += 1
+  STATE.accounts.set(user_pubkey, user_account)
