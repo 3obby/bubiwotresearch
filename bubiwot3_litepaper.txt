@@ -180,7 +180,7 @@ tion to perfectly reconstruct the original secret
 polynomial and compute the original secret key.
 The user's account is now recovered without any
 complex on-chain voting or session management.
-Crucially, this also restores full control over any Bitcoin held in the user's optional, protocol-managed sovereign vault.
+Crucially, this also restores full control over any Bitcoin held in the user's optional, protocol-managed sovereign vault. This interactive, high-security method is complemented by a more convenient asynchronous option for standard account control recovery.
 
 5
 
@@ -322,7 +322,13 @@ Loss of Devices or Keys
 
 Threat: Accidental key loss jeopardizes user accounts
 and staked funds.
-Mitigation: Robust social recovery is achieved via the cryptographic **Bottom-Up Secret Sharing** scheme. By retrieving public data from the smart contract and collecting deterministic shares from a threshold of guardians, a user can securely reconstruct their original key on a new device. **To enhance user experience and mitigate disruption from single-device loss, the protocol also supports optional session redundancy through a device mesh.** A user can designate companion devices (e.g., a laptop and a phone), each holding limited-privilege session keys. If one device is lost, the remaining device(s) can initiate an ephemeral co-signing process to securely generate a new session for a replacement device, often without needing to perform a full social recovery. This provides a practical layer of fault tolerance that minimizes panic and disruption for non-technical users. **To reduce the friction of real-time coordination, the protocol supports an asynchronous share-provisioning mechanism. Guardians can periodically attest to their liveness by pre-authorizing encrypted recovery components, which can be stored ephemerally on a decentralized network. This allows a user in recovery to aggregate the necessary components without requiring every guardian to be simultaneously online.** Crucially, this recovered key is the same key that controls the user's staked Bitcoin on the L1, ensuring that the primary economic stake is protected by the social recovery mechanism. Furthermore, if the user has opted into a protocol-managed sovereign vault, recovering their BUBIWOT account seamlessly restores their control over the Bitcoin held within it, making BUBIWOT a single, resilient recovery point for their entire digital asset portfolio.
+Mitigation: Robust social recovery is achieved via a tiered system that balances convenience with security. The protocol's foundation is the cryptographic **Bottom-Up Secret Sharing (BUSS)** scheme. By retrieving public data from the smart contract and collecting deterministic shares from a threshold of guardians in a real-time interactive session, a user can securely reconstruct their original master key on a new device. This high-security method is essential for recovering high-value assets like the sovereign Bitcoin vault.
+
+**To reduce the friction of real-time coordination for more common recovery scenarios, the protocol also supports a convenient, stateful asynchronous recovery mechanism.** A user can initiate a recovery request on-chain, and guardians can contribute encrypted shares at their leisure. This process is sufficient for regaining *control* of an account (e.g., rotating keys) without the need for a full, interactive BUSS ceremony.
+
+For day-to-day resilience and to mitigate disruption from single-device loss, the protocol also supports optional session redundancy through a device mesh. A user can designate companion devices (e.g., a laptop and a phone), each holding limited-privilege session keys. If one device is lost, the remaining device(s) can initiate an ephemeral co-signing process to securely generate a new session for a replacement device, often without needing to perform a full social recovery. This provides a practical layer of fault tolerance that minimizes panic and disruption for non-technical users.
+
+Crucially, the master key recovered via BUSS is the same key that controls the user's staked Bitcoin on the L1, ensuring that the primary economic stake is protected by the social recovery mechanism. Furthermore, if the user has opted into a protocol-managed sovereign vault, recovering their BUBIWOT account seamlessly restores their control over the Bitcoin held within it, making BUBIWOT a single, resilient recovery point for their entire digital asset portfolio.
 
 7.4
 

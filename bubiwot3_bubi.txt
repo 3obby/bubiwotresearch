@@ -171,6 +171,9 @@ DataEconomyMetrics: {
 
 // NEW: Data structure for a user's sovereign Bitcoin vault
 TssBtcVault: {
+  // NOTE: This high-security vault requires the user to have completed the
+  // one-time, interactive Bottom-Up Secret Sharing (BUSS) setup with their guardians
+  // to ensure full recoverability of the master key.
   btc_pubkey: Bytes,
   btc_address: String,
   status: Enum("ACTIVE", "LOCKED"),
@@ -1526,6 +1529,19 @@ FUNCTION finalize_succession(target_account_pubkey: PublicKey):
 // =================================================================
 // Asynchronous Recovery Functions
 // =================================================================
+
+// NOTE on the Two-Tiered Recovery Model:
+// BUBIWOT supports two complementary recovery mechanisms to balance convenience and security.
+//
+// 1. Asynchronous Recovery (implemented below): This is the default, user-friendly
+//    method for regaining *control* of an account (e.g., rotating the owner key). It is
+//    stateful on-chain, allowing guardians to contribute shares at their own convenience.
+//    This is sufficient for most day-to-day account management.
+//
+// 2. Bottom-Up Secret Sharing (BUSS - described in the litepaper): This is a high-security,
+//    interactive, and off-chain process for reconstructing the user's *master secret key*.
+//    It is a required security "upgrade" for users who want to create and use the
+//    `TssBtcVault` for managing Bitcoin, as it ensures the ultimate private key is fully recoverable.
 
 // Called by anyone on behalf of a user who has lost their device.
 // This creates an on-chain request that guardians can respond to asynchronously.
