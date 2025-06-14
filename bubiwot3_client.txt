@@ -39,7 +39,7 @@ This is the home screen the user sees after logging in. It's designed to be a hu
         -   `+ 0.0001 BTC (Your Share of Network Fees)`.
         -   `Voted 'Yes' on Proposal #123`.
 
-### 2.5. Design Improvements for a "Brain-Dead Simple" User Experience
+### 2.5. Design Improvements for a Familiar User Experience
 
 To achieve the goal of a Venmo-like simple experience, the following refinements are proposed:
 
