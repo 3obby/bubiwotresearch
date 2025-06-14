@@ -95,6 +95,7 @@ This is the comprehensive set of on-chain data points you can use to build your 
 *   `has_peer_verification`: (bool) Has the user completed social verification?
 *   `peer_verification_block`: (u64) How long ago the user was peer-verified.
 *   `active_device_count`: (u8) How many hardware-verified devices are linked.
+*   `account_status`: (Enum) The account's lifecycle state (`FRESH`, `ATTESTED`, `FROZEN`), a critical signal for gating features.
 
 #### **B. Guardian Metrics**
 *Metrics related to the user's social recovery network.*
@@ -102,6 +103,9 @@ This is the comprehensive set of on-chain data points you can use to build your 
 *   `guardian_of_count`: (u32) How many other users trust this account as a guardian.
 *   `guardian_liveness_ratio`: (Decimal) % of guardians who are verifiably online and active.
 *   `reciprocity_score`: (Decimal) % of guardians for whom this user is also a guardian.
+*   `failed_recoveries_as_guardian`: (u16) How many times they have failed to help another user recover.
+*   `succession_policy_set`: (bool) Does this user have a long-term inheritance plan?
+*   `active_companion_device_count`: (u8) Number of secondary devices for session redundancy.
 
 #### **C. Liveness Metrics**
 *Metrics indicating how active and consistent a user is on the network.*
@@ -128,13 +132,11 @@ This is the comprehensive set of on-chain data points you can use to build your 
 *   `times_slashed_lifetime`: (u16) Has this user ever been penalized for malicious behavior?
 *   `successful_reports_by_user`: (u32) How many Sybil accounts has this user successfully reported?
 *   `failed_recoveries_as_user`: (u16) How many times they have failed to recover their own account.
-*   `failed_recoveries_as_guardian`: (u16) How many times they have failed to help another user recover.
-*   `succession_policy_set`: (bool) Does this user have a long-term inheritance plan?
-*   `active_companion_device_count`: (u8) Number of secondary devices for session redundancy.
 
 #### **G. Social Graph Metrics**
 *Metrics that describe a user's position within the social web of trust.*
 *   `trust_distance_from_genesis`: (u8) Shortest path of attestations to a known foundation member.
+*   `trust_vector_commitment`: (Bytes) A Merkle commitment to a user's personalized trust vector, enabling ZK-proofs of social standing.
 *   `nostr_total_zaps_received_value`: (u64) Total value received via "zaps" on linked Nostr content.
 *   `nostr_unique_zappers_count`: (u32) Number of unique users who have "zapped" this user's content.
 

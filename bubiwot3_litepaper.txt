@@ -99,6 +99,34 @@ decentralized storage, and running services for
 verifiable builds and on-chain auctions, creating
 a fully self-sustaining ecosystem.
 
+### 3.1 Account Status Lifecycle  (NEW)
+
+To protect governance from Sybil influence the protocol recognises three canonical
+account states:
+
+| State    | Requirements                              | Permissions |
+|----------|-------------------------------------------|-------------|
+| **Fresh**  | Key registered, no peer attestation      | Wallet ops only |
+| **Attested** | ≥ 1 `PeerVerificationRecord` **and** ≥ 1 active verified device | Full feature set (UBI, proposals, voting, reviews, guardian duties) |
+| **Frozen** | Attested account whose devices are inactive past `DEVICE_HEARTBEAT_GRACE` **or** flagged by guardian/watchtower quorum | Custody only (no UBI, no governance) |
+
+State transitions are enforced on-chain; e.g. `create_proposal`, `register_builder`
+and `claim_ubi` all assert the **Attested** state.
+
+### 3.2 Trust-Chain Analytics  (NEW)
+
+Every peer attestation adds an edge to the on-chain social graph **G(V,E)**.  
+Exposing graph-derived, ZK-verifiable metrics unlocks:
+
+* *Shortest-path proofs* – e.g. “Prove I'm ≤ 3 hops from a genesis validator.”  
+* *Personalised PageRank* – continuous trust scores (`τ_u(v) ∈ [0,1]`) that dApps can
+  consume without learning the raw neighbourhood.  
+* *Spam attenuation & rate-limiting* based on trust mass.  
+* *Delegated voting weight* or quadratic funding modifiers derived from τ values.  
+
+The heavy computation runs off-chain; users publish only a Merkle commitment to
+their local trust vector and supply lightweight ZK proofs when needed.
+
 4
 
 Account Recovery via Bottom-Up Secret Sharing

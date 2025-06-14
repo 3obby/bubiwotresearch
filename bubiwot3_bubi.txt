@@ -12,6 +12,7 @@ STATE.config: {
   proposal_voting_period_blocks: Uint,
   build_submission_period_blocks: Uint, // NEW: How long builders have to submit hashes
   async_recovery_period_blocks: Uint, // NEW: How long an async recovery request stays open
+  device_liveness_grace_period_blocks: Uint, // NEW: How long a device can be inactive before account is frozen
   auction_period_blocks: Uint, // How often auctions can be started
   ubi_claim_period_blocks: Uint, // The cooldown period for UBI claims
   ubi_claim_cap_per_period: Uint, // Max total UBI that can be claimed in a period
@@ -61,6 +62,9 @@ STATE.reverse_external_links: Map<ChainID, Map<Address, PublicKey>> //  Efficien
 
 // -- Data Structures --
 
+// NEW: Canonical account status, derived from verification and liveness evidence.
+AccountStatus: Enum("FRESH", "ATTESTED", "FROZEN")
+
 AccountPolicy: {
   // Defines rules for who can perform actions on this account, like becoming a guardian.
   // This structure can be extended to support complex, composable rules for both
@@ -78,6 +82,7 @@ AccountPolicy: {
 DeviceRecord: {
   fingerprint_hash: Bytes,
   added_block: Uint,
+  last_seen_block: Uint, // NEW: Updated when the device is used to sign a tx.
   is_active: Bool,
 }
 
@@ -141,6 +146,7 @@ SecurityMetrics: {
 
 SocialGraphMetrics: { // For broader social interactions beyond guardians
   trust_distance_from_genesis: Uint, // Shortest path (in attestations) to a genesis/foundation member.
+  trust_vector_commitment: Option<Bytes>, // NEW: Merkle commitment to a personalized trust vector (e.g., PageRank)
   nostr_total_zaps_received_value: Uint, // Value-based interactions from linked Nostr ID.
   nostr_unique_zappers_count: Uint,
   external_address_count: Uint, // NEW: from metrics.txt
@@ -165,6 +171,7 @@ DataEconomyMetrics: {
 
 Account: {
   owner_pubkey: PublicKey,
+  status: AccountStatus, // NEW: The account's current lifecycle state.
   guardians: Set<PublicKey>,
   recovery_threshold: Uint,
   staked_btc_info: BtcStakeInfo,
@@ -235,6 +242,7 @@ ProposalPayload: Enum {
   }),
   CreateBounty({ title: String, description_hash: Bytes, amount: Uint, currency: String, bounty_id: BountyId }),
   SpendFromTreasury({ recipient: Address, amount: Uint, currency: String }), // To manage community funds
+  FreezeAccount({ target_pubkey: PublicKey, reason_hash: Bytes }), // NEW: Governance action to freeze a compromised/malicious account.
   SlashValidator({ validator_address: Address, evidence_hash: Bytes, reporter_pubkey: PublicKey }), // Reporter can be a watchtower
   ReportBug({ faulty_proposal_id: ProposalId, bug_description_hash: Bytes }), // For bug bounty payouts and slashing negligent reviewers
   AuthorizeOracleConsumer({ chain_id: ChainID, consumer_address: Address, fee_per_query: Uint, currency: String }), // NEW
@@ -420,9 +428,13 @@ FUNCTION add_verified_device(device_fingerprint_hash: Bytes):
   device_record = DeviceRecord {
     fingerprint_hash: device_fingerprint_hash,
     added_block: current_block,
+    last_seen_block: current_block,
     is_active: True,
   }
   user_account.verification_evidence.verified_devices.set(device_fingerprint_hash, device_record)
+
+  // Update account status if conditions are met
+  _update_account_status(user_account)
 
   STATE.accounts.set(user_pubkey, user_account)
   EMIT Event("DeviceAdded", { owner: user_pubkey, hash: device_fingerprint_hash })
@@ -434,10 +446,8 @@ FUNCTION claim_ubi():
   user_account = STATE.accounts.get(user_pubkey)
   ASSERT user_account is not None, "Account not found"
 
-  // UBI eligibility requires the highest level of assurance: both social and hardware verification.
-  // This is a protocol-defined policy to protect the commons' most valuable resource.
-  ASSERT user_account.verification_evidence.peer_verification.is_some(), "Peer verification is required to claim UBI"
-  ASSERT user_account.verification_evidence.verified_devices.values().filter(d => d.is_active).len() > 0, "An active, verified device is required to claim UBI"
+  // UBI eligibility requires the highest level of assurance, represented by the ATTESTED status.
+  ASSERT user_account.status == "ATTESTED", "Account must be in ATTESTED state to claim UBI"
 
   // Check cooldown period
   ASSERT current_block >= user_account.last_claim_block + STATE.config.ubi_claim_period_blocks, "Claim period has not passed"
@@ -485,9 +495,8 @@ FUNCTION claim_peer_verification(zk_proof: Bytes):
   }
   user_account.verification_evidence.peer_verification = Some(verification_record)
   
-  // Initialize the user's metrics vector if this is the first verification step
-  if user_account.metrics_version == 0:
-    _initialize_account_metrics(user_account)
+  // Update account status if conditions are met
+  _update_account_status(user_account)
   
   STATE.accounts.set(user_pubkey, user_account)
   EMIT Event("PeerVerificationCompleted", { owner: user_pubkey })
@@ -532,6 +541,7 @@ FUNCTION register_watchtower(stake_amount: Uint):
   watchtower_pubkey = sender
   watchtower_account = STATE.accounts.get(watchtower_pubkey)
   ASSERT watchtower_account is not None, "Account not found"
+  ASSERT watchtower_account.status == "ATTESTED", "Must be in ATTESTED state to register as a watchtower"
   ASSERT watchtower_account.bubi_balance >= stake_amount, "Insufficient stake"
   ASSERT STATE.registered_watchtowers.get(watchtower_pubkey) is None, "Already registered"
 
@@ -556,6 +566,7 @@ FUNCTION register_builder(stake_amount: Uint, metadata_url: String):
   builder_pubkey = sender
   builder_account = STATE.accounts.get(builder_pubkey)
   ASSERT builder_account is not None, "Account not found"
+  ASSERT builder_account.status == "ATTESTED", "Must be in ATTESTED state to register as a builder"
   ASSERT builder_account.bubi_balance >= stake_amount, "Insufficient stake"
   ASSERT STATE.registered_builders.get(builder_pubkey) is None, "Already registered"
 
@@ -585,8 +596,8 @@ FUNCTION create_proposal(title: String, description_hash: Bytes, payload: Propos
   proposer_pubkey = sender
   proposer_account = STATE.accounts.get(proposer_pubkey)
   ASSERT proposer_account.bubi_balance >= STATE.config.proposal_bond_amount, "Insufficient bond"
-  // NEW: Proposals can only be created by users with some level of verification evidence.
-  ASSERT proposer_account.verification_evidence.peer_verification.is_some() or proposer_account.verification_evidence.verified_devices.len() > 0, "Proposer must have peer or device verification"
+  // GOVERNANCE GATING: Proposals can only be created by fully attested users.
+  ASSERT proposer_account.status == "ATTESTED", "Account must be in ATTESTED state to create proposals"
 
   // Take the bond
   proposer_account.bubi_balance -= STATE.config.proposal_bond_amount
@@ -704,6 +715,12 @@ FUNCTION execute_proposal(proposal_id):
       // In a real implementation, this would likely have a time-lock.
       // For now, it directly triggers a transfer from a protocol-owned treasury account.
       _transfer_from_treasury(payload.recipient, payload.amount, payload.currency)
+  if payload is FreezeAccount: // NEW
+    target_account = STATE.accounts.get(payload.target_pubkey)
+    if target_account is not None:
+      target_account.status = "FROZEN"
+      STATE.accounts.set(payload.target_pubkey, target_account)
+      EMIT Event("AccountFrozen", { pubkey: payload.target_pubkey, reason: "GovernanceAction" })
   if payload is SlashValidator:
     // This is a governance-enforced action to penalize a validator for misbehavior
     // (e.g., censorship proven by watchtowers). The actual slashing logic
@@ -815,6 +832,7 @@ FUNCTION review_code_proposal(proposal_id, stake_amount: Uint, approved: Bool, c
   // Pre-conditions
   reviewer_pubkey = sender
   reviewer_account = STATE.accounts.get(reviewer_pubkey)
+  ASSERT reviewer_account.status == "ATTESTED", "Must be in ATTESTED state to review code"
   proposal = STATE.proposals.get(proposal_id)
   ASSERT proposal.payload is UpdateCodeCommit
   ASSERT reviewer_account.bubi_balance >= stake_amount
@@ -946,6 +964,58 @@ FUNCTION slash_inactive_guardian(guardian_to_slash_pubkey: PublicKey):
   STATE.accounts.set(guardian_to_slash_pubkey, guardian_account)
   
   EMIT Event("GuardianSlashedForInactivity", { owner: user_pubkey, slashed_guardian: guardian_to_slash_pubkey })
+
+// --- NEW Account Status Management Functions ---
+
+// INTERNAL helper to transition account status based on evidence.
+FUNCTION _update_account_status(account: &mut Account):
+  // Conditions for ATTESTED: At least one peer verification and one active device.
+  has_peer_verification = account.verification_evidence.peer_verification.is_some()
+  has_active_device = account.verification_evidence.verified_devices.values().filter(d => d.is_active).len() > 0
+
+  if account.status == "FRESH" and has_peer_verification and has_active_device:
+    account.status = "ATTESTED"
+    EMIT Event("AccountAttested", { pubkey: account.owner_pubkey })
+  
+  // Note: Unfreezing logic is handled in `unfreeze_account` to require explicit user action.
+
+// Called by anyone to check if an account's devices have gone stale, freezing the account if necessary.
+FUNCTION check_and_update_account_status(target_pubkey: PublicKey):
+  account = STATE.accounts.get(target_pubkey)
+  ASSERT account is not None, "Account not found"
+  if account.status != "ATTESTED": RETURN // Only attested accounts can be frozen for inactivity.
+
+  is_stale = True
+  for device in account.verification_evidence.verified_devices.values():
+    if device.is_active and (current_block - device.last_seen_block) < STATE.config.device_liveness_grace_period_blocks:
+      is_stale = False
+      break
+  
+  if is_stale:
+    account.status = "FROZEN"
+    STATE.accounts.set(target_pubkey, account)
+    EMIT Event("AccountFrozen", { pubkey: target_pubkey, reason: "DeviceInactivity" })
+
+// Allows a user to unfreeze their account by proving liveness.
+FUNCTION unfreeze_account():
+  user_pubkey = sender
+  account = STATE.accounts.get(user_pubkey)
+  ASSERT account is not None, "Account not found"
+  ASSERT account.status == "FROZEN", "Account is not frozen"
+
+  // To unfreeze, the user must prove control of an active, registered device.
+  // The device fingerprint would be part of the transaction signature context.
+  device_fingerprint_hash = get_signer_device_fingerprint()
+  device = account.verification_evidence.verified_devices.get(device_fingerprint_hash)
+  ASSERT device is not None and device.is_active, "Request must be signed by an active, registered device"
+
+  // Update device liveness and account status
+  device.last_seen_block = current_block
+  account.status = "ATTESTED"
+  
+  STATE.accounts.set(user_pubkey, account)
+  EMIT Event("AccountUnfrozen", { pubkey: user_pubkey })
+
 
 // INTERNAL function to process a successful bug report proposal.
 FUNCTION _process_bug_report(faulty_proposal_id, bug_reporter_pubkey):

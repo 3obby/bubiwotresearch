@@ -20,6 +20,8 @@ These metrics are the "Lego blocks" for building trust and enabling complex inte
     -   Description: Contains the record of a successful social attestation event, including the block height and policy hash. `is_some()` indicates the user is peer-verified.
 -   `verified_devices`: **Map<FingerprintHash, DeviceRecord>**
     -   Description: A map of all hardware-verified devices linked to the account. The number of active devices can be calculated from this.
+-   `account_status`: **Enum("FRESH", "ATTESTED", "FROZEN")**
+    -   Description: The account's lifecycle state. **FRESH** accounts are new and have limited permissions. **ATTESTED** accounts are fully verified and have access to all protocol features (UBI, governance). **FROZEN** accounts are temporarily disabled due to inactivity or a governance action.
 
 ---
 
@@ -112,6 +114,8 @@ These metrics are the "Lego blocks" for building trust and enabling complex inte
 
 -   `trust_distance_from_genesis`: **Uint**
     -   Description: Shortest path of attestations to a known foundation member.
+-   `trust_vector_commitment`: **Option<Bytes>**
+    -   Description: A Merkle commitment to a user's personalized trust vector (e.g., PageRank scores for peers), allowing for ZK-proofs of social standing without revealing the full graph.
 -   `nostr_total_zaps_received_value`: **Uint**
     -   Description: Total value received via "zaps" on linked Nostr content.
 -   `nostr_unique_zappers_count`: **Uint**
