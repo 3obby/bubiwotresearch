@@ -1,0 +1,145 @@
+# BUBIWOT Agent Architecture v1.0
+## A Trust-Minimized Blueprint for Personal Intelligence & Human-Agent Collaboration
+
+---
+
+### **Abstract**
+
+This document outlines a comprehensive architecture for integrating "Personal Intelligence" (AI agents, bots, LLMs) into the BUBIWOT protocol. The primary design goal is to empower users with advanced automation while rigorously preserving the protocol's core principles of user sovereignty, peer-to-peer semantics, and cryptographic security. We introduce the **Personal AI Capsule (PAC)**, a sandboxed execution environment for agents, and a tiered model of trust and autonomy built upon BUBIWOT's existing `CapabilityGrant` primitive. This architecture allows users to safely delegate specific, bounded, and revocable tasks to AI, with optional oversight from their social recovery network (guardians). It is designed to be immediately implementable within a client like the "Dashboard" AI OS, while providing a resilient framework for human-agent interaction in a post-AGI world.
+
+---
+
+### **1. Core Principles**
+
+1.  **Human Sovereignty is Absolute**: The human user is always the root of authority. An agent can never own an account, attest for another human, or participate directly in governance or UBI. Agents are tools, not peers.
+2.  **The Principle of Bounded Delegation**: An agent's power is never inherent; it is always *delegated* by a human. Every delegated permission must be explicitly granted, time-limited, resource-capped, and easily revocable.
+3.  **Social Veto Power**: For high-stakes automation, the user's trusted social graph (their guardians) must have the ability to act as a "human circuit-breaker," providing a crucial layer of oversight and control.
+4.  **Progressive Disclosure of Autonomy**: The user experience should guide users from simple, advisory AI (Level 0) to more autonomous agents (Level 1 & 2) as their comfort and needs evolve. Users should never be overwhelmed with complex permissioning.
+
+---
+
+### **2. The Personal AI Capsule (PAC)**
+
+The PAC is the cornerstone of this architecture. It is a secure, sandboxed environment where an agent's code executes, isolated from the user's private keys and other sensitive data.
+
+*   **Architecture**: The PAC is best implemented as a **WASM (WebAssembly) module** or a **WebWorker** running within the BUBIWOT client (e.g., the "Dashboard" app). This provides a standardized, memory-safe sandbox that runs locally in the user's browser.
+*   **Interface**: The PAC does not get direct access to the user's wallet or keys. Instead, the client provides it with a limited **capabilities object** via a `postMessage` or gRPC interface. This object exposes a curated set of functions, for example:
+    ```javascript
+    const pac_api = {
+      // Read-only queries
+      query: (request) => client.queryChain(request),
+      // Requests a signature for a pre-defined, granted capability
+      invokeCapability: (grantId, params) => client.useCapability(grantId, params),
+      // Access a specific, granted part of the user's data vault
+      readDataVault: (path) => client.readVault(path),
+    };
+    ```
+*   **Execution Model**:
+    *   **Local**: The agent (e.g., a small, specialized model) runs entirely within the WASM sandbox. This is ideal for privacy and efficiency.
+    *   **Remote/Hybrid**: The local PAC acts as a secure proxy to a remote, powerful LLM (like GPT-4). The PAC crafts the prompt, sends it to the remote API, and then validates the response before proposing an on-chain action. The critical point is that the *permission to act* (`CapabilityGrant`) is always checked and executed locally by the client, not by the remote service.
+*   **Security Kernel**: The BUBIWOT client itself acts as the security kernel. It is responsible for loading the PAC, enforcing its sandbox, mediating all its requests, and checking every `invokeCapability` call against the on-chain `CapabilityGrant` state before signing any transaction.
+
+---
+
+### **3. The Three Trust Levels of Agent Autonomy**
+
+#### **Level 0: The Advisor (Read-Only)**
+
+This is the default, safest level of interaction. The agent can read public on-chain data and the user's (decrypted) private data but cannot perform any action on their behalf.
+
+*   **Use Cases**:
+    *   Summarizing transaction history or social feeds.
+    *   Identifying unclaimed rewards or yield farming opportunities.
+    *   Drafting replies to messages or governance proposals.
+    *   Analyzing a user's security posture ("Your guardian liveness is low").
+*   **Mechanism**: The client grants the PAC read-only access to RPC endpoints and the user's data vault. The PAC's output is always a *suggestion* presented in the UI. The user must manually click a button to execute any resulting transaction.
+*   **On-Chain Footprint**: None.
+
+#### **Level 1: The Runner (Scoped, Autonomous Execution)**
+
+The user delegates permission for an agent to perform specific, tightly-scoped actions without requiring confirmation for each one.
+
+*   **Use Cases**:
+    *   **Automated DCA**: "Buy 50 BUBI worth of BTC every week."
+    *   **Reward Claiming**: "Automatically claim my UBI and staking rewards once they reach a certain threshold."
+    *   **Social Posting**: "Post my blog updates to my BUBIWOT feed."
+*   **Mechanism**: The user calls `grant_capability`, creating an on-chain record that authorizes the PAC (as `grantee`) to perform a specific action. The grant must have strict limits.
+*   **On-Chain Primitives**:
+    *   `CapabilityGrant` with `ExecuteTx`, `WriteDataVault`, etc.
+    *   **NEW**: An `interaction_limit` field is proposed for the `CapabilityGrant` struct to enforce rate-limiting directly on-chain.
+        ```pseudocode
+        // In bubiwot3_bubi.txt, inside CapabilityGrant struct
+        interaction_limit: Option<{
+          max_calls: Uint,
+          window_blocks: Uint, // Defines the period over which max_calls is measured
+        }>
+        ```
+
+#### **Level 2: The Co-Signer (Guardian-Gated Autonomy)**
+
+For higher-risk or higher-value actions, the agent's autonomy is further checked by the user's social graph. The agent can only act if a threshold of guardians also approves the request.
+
+*   **Use Cases**:
+    *   **Portfolio Management**: An agent that can rebalance a portfolio or make trades up to a significant value.
+    *   **DAO Delegation**: An agent that can vote on the user's behalf in certain types of governance proposals.
+    *   **Emergency Actions**: An agent that can lock an account or rotate keys if it detects a credible threat, but only with guardian consensus.
+*   **Mechanism**: The `CapabilityGrant` includes a `guardian_policy` which specifies the required number of guardian co-signatures.
+*   **On-Chain Primitives**:
+    *   **NEW**: An optional `guardian_policy` field for the `CapabilityGrant` struct.
+        ```pseudocode
+        // In bubiwot3_bubi.txt, inside CapabilityGrant struct
+        guardian_policy: Option<{
+          threshold: Uint, // How many guardians must sign
+          // An allow-list could be added for more granular control
+        }>
+        ```
+*   **Flow**:
+    1.  The PAC requests to use its Level-2 capability.
+    2.  The user's client sees the `guardian_policy` and broadcasts a signature request to the guardians via Nostr.
+    3.  Guardians see the request in their client ("Alice's Trading Bot wants to sell 1 ETH. Approve?").
+    4.  If enough guardians approve, their signatures are sent back to the user's client.
+    5.  The client bundles the guardian signatures with the transaction and calls `use_capability`. The smart contract verifies these off-chain signatures before execution.
+
+---
+
+### **4. Client & UI/UX Implementation**
+
+For an AI OS like "Dashboard", the user interface for managing agents is critical.
+
+1.  **"Connected Agents" / "My Bots" View**: A dedicated area, likely under "Profile" or "Security," that lists all active PACs. For each agent, it must clearly display:
+    *   **Name & Icon**: "My DCA Bot".
+    *   **Granted Permissions**: A human-readable list (e.g., "Can send up to 50 BUBI per week").
+    *   **Guardian Policy**: "Requires 2 of 5 guardians to approve high-value trades."
+    *   **Activity Log**: A feed of recent actions taken by the agent.
+    *   **Controls**: `[Pause]`, `[Revoke]` buttons.
+
+2.  **The Granting Flow**: When a user adds a new agent, the client should present a clear, OS-style permission prompt:
+    > **Allow "DeFi Saver" to:**
+    > ✅ View your BUBI and BTC balances.
+    > ✅ Claim staking rewards on your behalf.
+    > ❌ Spend funds from your main wallet.
+    >
+    > [ Allow ] [ Deny ]
+
+3.  **Guardian Approval UI**: The request for a guardian's co-signature must be simple and safe. It should appear as a non-intrusive notification in their client.
+    > **Guardian Request**
+    >
+    > `@alice`'s agent "Portfolio Manager" wants to execute a trade.
+    >
+    > **Action**: Swap 0.5 BTC for 10 ETH.
+    > **Expires**: in 1 hour
+    >
+    > [ Approve Signature ] [ Decline ]
+
+---
+
+### **5. The AGI-Resistant Moat: Why This Model Endures**
+
+This architecture is designed to remain secure even as AI capabilities grow exponentially. Its resilience comes from several key properties:
+
+1.  **Hard Economic Boundaries**: An AGI cannot create value out of thin air. Its actions are fundamentally limited by the BUBI balance in the user's account and the cryptographic limits in the `CapabilityGrant`.
+2.  **Human Social Trust as the Ultimate Backstop**: The root of trust is the human social graph. An AGI cannot force a guardian attestation or a co-signature. The social veto remains a powerful, off-switch controlled by other humans.
+3.  **Revocability and Expiry**: No grant is permanent. Autonomy is always "leased" to the agent, not owned. A user or their guardians can revoke access at any time.
+4.  **Transparent Attribution**: By emitting a distinct `AgentAction` event on-chain, the protocol allows the entire ecosystem to "view-source" on any action. Other users, dApps, or even other agents can choose to trust or ignore actions originating from bots, preventing a future where the social layer is overrun by indistinguishable AI interactions.
+
+By building on these principles, BUBIWOT can become the essential human interface for a world of ubiquitous AI, ensuring that individual sovereignty is not just preserved, but enhanced.
