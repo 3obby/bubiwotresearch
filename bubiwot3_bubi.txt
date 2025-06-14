@@ -10,9 +10,9 @@ STATE.config: {
   // ... other config from v1 ...
   proposal_bond_amount: Uint, // BUBI required to create a governance proposal
   proposal_voting_period_blocks: Uint,
-  build_submission_period_blocks: Uint, // NEW: How long builders have to submit hashes
-  async_recovery_period_blocks: Uint, // NEW: How long an async recovery request stays open
-  device_liveness_grace_period_blocks: Uint, // NEW: How long a device can be inactive before account is frozen
+  build_submission_period_blocks: Uint, //  How long builders have to submit hashes
+  async_recovery_period_blocks: Uint, //  How long an async recovery request stays open
+  device_liveness_grace_period_blocks: Uint, //  How long a device can be inactive before account is frozen
   auction_period_blocks: Uint, // How often auctions can be started
   ubi_claim_period_blocks: Uint, // The cooldown period for UBI claims
   ubi_claim_cap_per_period: Uint, // Max total UBI that can be claimed in a period
@@ -35,8 +35,8 @@ STATE.proposals: Map<ProposalId, Proposal>
 STATE.alliances: Map<String, Alliance> // Record of formal protocol alliances
 STATE.code_reviews: Map<ProposalId, List<CodeReview>> // Staked reviews for code proposals
 STATE.registered_watchtowers: Map<PublicKey, Watchtower> // Staked entities that can report validators
-STATE.registered_builders: Map<PublicKey, Builder> // NEW: Staked entities that build the protocol
-STATE.build_submissions: Map<ProposalId, List<BuildSubmission>> // NEW: Tracks submitted build hashes for code proposals
+STATE.registered_builders: Map<PublicKey, Builder> //  Staked entities that build the protocol
+STATE.build_submissions: Map<ProposalId, List<BuildSubmission>> //  Tracks submitted build hashes for code proposals
 STATE.capability_grants: Map<GrantId, CapabilityGrant> // For ZK-OAuth flows
 STATE.used_grant_nullifiers: Map<Bytes, Bool> // For stateless, one-time use of capabilities
 
@@ -62,7 +62,7 @@ STATE.reverse_external_links: Map<ChainID, Map<Address, PublicKey>> //  Efficien
 
 // -- Data Structures --
 
-// NEW: Canonical account status, derived from verification and liveness evidence.
+//  Canonical account status, derived from verification and liveness evidence.
 AccountStatus: Enum("FRESH", "ATTESTED", "FROZEN")
 
 AccountPolicy: {
@@ -71,29 +71,29 @@ AccountPolicy: {
   // attestation and recovery (e.g. requiring attestations from multiple user-defined groups).
   min_attestor_reputation: Uint,
   min_attestor_stake: Uint,
-  // NEW: Attestors must themselves be backed by specific evidence.
+  //  Attestors must themselves be backed by specific evidence.
   attestor_must_be_peer_verified: Bool,
   attestor_min_device_count: Uint,
 }
 
 // REMOVED: The VerificationLevel enum is replaced by explicit evidence records.
 
-// NEW: Record for each hardware-verified device.
+//  Record for each hardware-verified device.
 DeviceRecord: {
   fingerprint_hash: Bytes,
   added_block: Uint,
-  last_seen_block: Uint, // NEW: Updated when the device is used to sign a tx.
+  last_seen_block: Uint, //  Updated when the device is used to sign a tx.
   is_active: Bool,
 }
 
-// NEW: Record of a successful peer-verification event.
+//  Record of a successful peer-verification event.
 PeerVerificationRecord: {
   verification_block: Uint,
   policy_hash: Bytes, // The policy used for this verification
   attestor_commitment_hash: Bytes, // A commitment to the set of attestors
 }
 
-// --- NEW: Structured Data for Atomic Metrics ---
+// ---  Structured Data for Atomic Metrics ---
 // These organized structs will replace the looser `activity_metrics` and `security_metrics`.
 
 VerificationEvidence: {
@@ -107,11 +107,11 @@ GuardianMetrics: {
   guardian_liveness_ratio: Decimal, // % of this user's guardians with recent heartbeats.
   guardian_set_avg_reputation: Uint, // Average "guardian" reputation of this user's chosen guardians.
   reciprocity_score: Decimal, // % of guardians who have this user as a guardian in return.
-  key_rotations_lifetime: Uint, // NEW: from metrics.txt, good security hygiene metric
+  key_rotations_lifetime: Uint, //  from metrics.txt, good security hygiene metric
 }
 
 LivenessMetrics: {
-  creation_block: Uint, // NEW: from metrics.txt, useful for account age
+  creation_block: Uint, //  from metrics.txt, useful for account age
   last_activity_block: Uint,
   tx_count_30d: Uint,
   governance_votes_90d: Uint,
@@ -129,7 +129,7 @@ EconomicMetrics: {
   auction_participation_count_90d: Uint,
   auction_win_count_90d: Uint,
   treasury_bounties_claimed_count: Uint,
-  bounties_funded_lifetime: Uint, // NEW: from metrics.txt
+  bounties_funded_lifetime: Uint, //  from metrics.txt
   capability_grants_issued_count: Uint,
 }
 
@@ -146,10 +146,10 @@ SecurityMetrics: {
 
 SocialGraphMetrics: { // For broader social interactions beyond guardians
   trust_distance_from_genesis: Uint, // Shortest path (in attestations) to a genesis/foundation member.
-  trust_vector_commitment: Option<Bytes>, // NEW: Merkle commitment to a personalized trust vector (e.g., PageRank)
+  trust_vector_commitment: Option<Bytes>, //  Merkle commitment to a personalized trust vector (e.g., PageRank)
   nostr_total_zaps_received_value: Uint, // Value-based interactions from linked Nostr ID.
   nostr_unique_zappers_count: Uint,
-  external_address_count: Uint, // NEW: from metrics.txt
+  external_address_count: Uint, //  from metrics.txt
 }
 
 GovernanceMetrics: {
@@ -169,7 +169,7 @@ DataEconomyMetrics: {
   data_pool_participations: Uint, // Number of privacy-preserving data pools the user is part of.
 }
 
-// NEW: Data structure for a user's sovereign Bitcoin vault
+//  Data structure for a user's sovereign Bitcoin vault
 TssBtcVault: {
   // NOTE: This high-security vault requires the user to have completed the
   // one-time, interactive Bottom-Up Secret Sharing (BUSS) setup with their guardians
@@ -182,7 +182,7 @@ TssBtcVault: {
 
 Account: {
   owner_pubkey: PublicKey,
-  status: AccountStatus, // NEW: The account's current lifecycle state.
+  status: AccountStatus, //  The account's current lifecycle state.
   guardians: Set<PublicKey>,
   recovery_threshold: Uint,
   staked_btc_info: BtcStakeInfo,
@@ -201,7 +201,7 @@ Account: {
   last_btc_reward_claim_block: Uint, // For BTC fee share
   policy: AccountPolicy,
   succession_policy: Option<SuccessionPolicy>,
-  // --- NEW: Atomic Metrics for Composable Identity ---
+  // ---  Atomic Metrics for Composable Identity ---
   // A Merkle root of all verifiable metrics for this account.
   // This allows for efficient ZK-proofs of specific facts without revealing all data.
   // The full metrics data is stored/computed by the contract and updated on relevant actions.
@@ -225,7 +225,7 @@ Account: {
   last_guardian_heartbeat_block: Uint, // For guardian proof-of-liveness
   btc_payout_address: Option<String>,
 
-  // NEW: Optional, user-managed sovereign vault
+  //  Optional, user-managed sovereign vault
   managed_btc_vault: Option<TssBtcVault>,
 }
 
@@ -241,7 +241,7 @@ Proposal: {
   proposal_bond: Uint,
   status: Enum("PENDING_VOTE", "PASSED", "REJECTED", "EXECUTED", "PENDING_BUILD"),
   payload: ProposalPayload,
-  verified_build_hash: Option<Bytes>, // NEW: Stores the consensus-verified build hash
+  verified_build_hash: Option<Bytes>, //  Stores the consensus-verified build hash
 }
 
 ProposalPayload: Enum {
@@ -256,7 +256,7 @@ ProposalPayload: Enum {
   }),
   CreateBounty({ title: String, description_hash: Bytes, amount: Uint, currency: String, bounty_id: BountyId }),
   SpendFromTreasury({ recipient: Address, amount: Uint, currency: String }), // To manage community funds
-  FreezeAccount({ target_pubkey: PublicKey, reason_hash: Bytes }), // NEW: Governance action to freeze a compromised/malicious account.
+  FreezeAccount({ target_pubkey: PublicKey, reason_hash: Bytes }), //  Governance action to freeze a compromised/malicious account.
   SlashValidator({ validator_address: Address, evidence_hash: Bytes, reporter_pubkey: PublicKey }), // Reporter can be a watchtower
   ReportBug({ faulty_proposal_id: ProposalId, bug_description_hash: Bytes }), // For bug bounty payouts and slashing negligent reviewers
   AuthorizeOracleConsumer({ chain_id: ChainID, consumer_address: Address, fee_per_query: Uint, currency: String }), // NEW
@@ -418,6 +418,12 @@ AsynchronousRecoveryRequest: {
   // Map of guardian pubkey to their encrypted share.
   contributed_shares: Map<PublicKey, Bytes>,
   expiry_block: Uint,
+  // --- Start NEW Additions ---
+  // The user who initiated the recovery, in case a deposit needs to be returned.
+  initiator_pubkey: PublicKey,
+  // An optional deposit to disincentivize spamming the recovery process.
+  deposit: Option<Coin>,
+  // --- End NEW Additions ---
 }
 // --- End NEW Data Structure ---
 
@@ -575,7 +581,7 @@ FUNCTION register_watchtower(stake_amount: Uint):
   EMIT Event("WatchtowerRegistered", { pubkey: watchtower_pubkey, stake: stake_amount })
 
 
-// NEW: Allows an account to stake BUBI and become a builder.
+//  Allows an account to stake BUBI and become a builder.
 FUNCTION register_builder(stake_amount: Uint, metadata_url: String):
   // Pre-conditions
   builder_pubkey = sender
@@ -1055,7 +1061,7 @@ FUNCTION _process_bug_report(faulty_proposal_id, bug_reporter_pubkey):
         reviewer: review.reviewer_pubkey,
       })
 
-  // NEW: Find and penalize the builders who submitted the faulty build
+  //  Find and penalize the builders who submitted the faulty build
   if faulty_proposal.verified_build_hash is not None:
     submissions = STATE.build_submissions.get(faulty_proposal_id) or []
     for sub in submissions:
@@ -1545,10 +1551,19 @@ FUNCTION finalize_succession(target_account_pubkey: PublicKey):
 
 // Called by anyone on behalf of a user who has lost their device.
 // This creates an on-chain request that guardians can respond to asynchronously.
-FUNCTION initiate_asynchronous_recovery(target_account_pubkey: PublicKey, recovery_pubkey: PublicKey):
+FUNCTION initiate_asynchronous_recovery(target_account_pubkey: PublicKey, recovery_pubkey: PublicKey, deposit: Option<Coin>):
   // Pre-conditions
+  initiator_pubkey = sender
   ASSERT STATE.accounts.get(target_account_pubkey) is not None, "Target account does not exist"
   ASSERT STATE.pending_async_recoveries.get(target_account_pubkey) is None, "Recovery process already initiated for this account"
+
+  // If a deposit is provided, lock the funds from the initiator's account.
+  if deposit.is_some():
+    initiator_account = STATE.accounts.get(initiator_pubkey)
+    ASSERT initiator_account is not None, "Initiator account not found"
+    ASSERT initiator_account.bubi_balance >= deposit.amount, "Initiator has insufficient funds for deposit"
+    initiator_account.bubi_balance -= deposit.amount
+    STATE.accounts.set(initiator_pubkey, initiator_account)
 
   // Create and store the recovery request
   request = AsynchronousRecoveryRequest {
@@ -1556,6 +1571,8 @@ FUNCTION initiate_asynchronous_recovery(target_account_pubkey: PublicKey, recove
     recovery_pubkey: recovery_pubkey,
     contributed_shares: Map(),
     expiry_block: current_block + STATE.config.async_recovery_period_blocks,
+    initiator_pubkey: initiator_pubkey,
+    deposit: deposit,
   }
   STATE.pending_async_recoveries.set(target_account_pubkey, request)
 
@@ -1591,6 +1608,14 @@ FUNCTION cancel_asynchronous_recovery():
   request = STATE.pending_async_recoveries.get(owner_pubkey)
   ASSERT request is not None, "No recovery in progress for this account"
 
+  // If there was a deposit, return it to the initiator.
+  if request.deposit.is_some():
+    initiator_account = STATE.accounts.get(request.initiator_pubkey)
+    // It's possible the initiator account was deleted, so we check.
+    if initiator_account is not None:
+      initiator_account.bubi_balance += request.deposit.amount
+      STATE.accounts.set(request.initiator_pubkey, initiator_account)
+
   // The owner proving they are in control is enough to cancel.
   STATE.pending_async_recoveries.remove(owner_pubkey)
   
@@ -1607,12 +1632,19 @@ FUNCTION cleanup_asynchronous_recovery(target_account_pubkey: PublicKey):
   ASSERT request is not None, "No recovery request to clean up"
   ASSERT current_block >= request.expiry_block, "Recovery request has not expired yet"
 
+  // If the request had a deposit, return it to the initiator.
+  if request.deposit.is_some():
+    initiator_account = STATE.accounts.get(request.initiator_pubkey)
+    if initiator_account is not None:
+      initiator_account.bubi_balance += request.deposit.amount
+      STATE.accounts.set(request.initiator_pubkey, initiator_account)
+
   // Remove the expired request
   STATE.pending_async_recoveries.remove(target_account_pubkey)
 
   EMIT Event("AsynchronousRecoveryCleaned", { target: target_account_pubkey })
 
-// NEW: Called by a user to create their sovereign vault.
+//  Called by a user to create their sovereign vault.
 FUNCTION create_sovereign_btc_vault():
   user_pubkey = sender
   user_account = STATE.accounts.get(user_pubkey)
@@ -1623,7 +1655,7 @@ FUNCTION create_sovereign_btc_vault():
   // and then call back to the contract to register the new address.
   EMIT Event("SovereignVaultCreationRequested", { owner: user_pubkey })
 
-// NEW: Called by the TSS service itself to register the newly created vault address.
+// Called by the TSS service itself to register the newly created vault address.
 FUNCTION _register_sovereign_btc_vault(owner_pubkey: PublicKey, btc_pubkey: Bytes, btc_address: String):
   // Access control: only the TSS service's representative on-chain can call this.
   ASSERT is_caller_tss_service(sender)
@@ -1640,7 +1672,7 @@ FUNCTION _register_sovereign_btc_vault(owner_pubkey: PublicKey, btc_pubkey: Byte
   STATE.accounts.set(owner_pubkey, user_account)
   EMIT Event("SovereignVaultCreated", { owner: owner_pubkey, address: btc_address })
 
-// NEW: Called by the user to authorize a spend from their vault.
+// Called by the user to authorize a spend from their vault.
 FUNCTION authorize_btc_spend(recipient_address: String, amount_sats: Uint, fee_rate_sats_per_byte: Uint):
   user_pubkey = sender
   user_account = STATE.accounts.get(user_pubkey)
