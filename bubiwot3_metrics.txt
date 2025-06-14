@@ -112,8 +112,6 @@ These metrics are the "Lego blocks" for building trust and enabling complex inte
 ### 7. Social Graph Metrics (`social_graph`)
 *Metrics that describe a user's position within the social web of trust and other platforms.*
 
--   `trust_distance_from_genesis`: **Uint**
-    -   Description: Shortest path of attestations to a known foundation member.
 -   `trust_vector_commitment`: **Option<Bytes>**
     -   Description: A Merkle commitment to a user's personalized trust vector (e.g., PageRank scores for peers), allowing for ZK-proofs of social standing without revealing the full graph.
 -   `nostr_total_zaps_received_value`: **Uint**

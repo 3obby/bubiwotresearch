@@ -47,4 +47,23 @@ FUNCTION initiate_asynchronous_recovery(target_account_pubkey: PublicKey, recove
 FUNCTION contribute_recovery_share(target_account_pubkey: PublicKey, encrypted_share: Bytes):
   guardian_pubkey = sender
   request = STATE.pending_async_recoveries.get(target_account_pubkey)
-  ASSERT request is not None, "No active recovery process for this account" 
+  ASSERT request is not None, "No active recovery process for this account"
+
+SocialGraphMetrics: {
+  trust_vector_commitment: Option<Bytes>,
+  nostr_total_zaps_received_value: Uint,
+  nostr_unique_zappers_count: Uint,
+  external_address_count: Uint,
+}
+
+// These are a subset of the data committed to the metrics_root and are now highly structured.
+guardian_metrics: GuardianMetrics,
+liveness: LivenessMetrics,
+reputation: ReputationMetrics,
+economic: EconomicMetrics,
+security: SecurityMetrics,
+// --- Start NEW Additions ---
+social_graph: SocialGraphMetrics,
+governance: GovernanceMetrics,
+data_economy: DataEconomyMetrics,
+// existing code... 

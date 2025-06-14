@@ -119,7 +119,7 @@ and `claim_ubi` all assert the **Attested** state.
 Every peer attestation adds an edge to the on-chain social graph **G(V,E)**.  
 Exposing graph-derived, ZK-verifiable metrics unlocks:
 
-* *Shortest-path proofs* – e.g. "Prove I'm ≤ 3 hops from a genesis validator."  
+* *Shortest-path proofs* – e.g. "Prove I'm ≤ 3 hops from @another_user."  
 * *Personalised PageRank* – continuous trust scores (`τ_u(v) ∈ [0,1]`) that dApps can
   consume without learning the raw neighbourhood.  
 * *Spam attenuation & rate-limiting* based on trust mass.  
